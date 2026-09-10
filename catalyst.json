@@ -1,0 +1,12 @@
+{
+  "client": {
+    "source": "client/dist"
+  },
+  "functions": {
+    "targets": [
+      "pms_appointment_service"
+    ],
+    "ignore": [],
+    "source": "functions"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "wellness-pms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Wellness PMS Fullstack Catalyst Application (UI Client & Backend Services)",
+  "scripts": {
+    "dev": "npm run dev --prefix client",
+    "build": "npm run build --prefix client",
+    "serve": "catalyst serve",
+    "deploy": "catalyst deploy"
+  }
+}
