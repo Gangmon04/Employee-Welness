@@ -8,5 +8,11 @@
     ],
     "ignore": [],
     "source": "functions"
-  }
+  },
+  "slate": [
+    {
+      "name": "wellness-pms-portal",
+      "source": "client"
+    }
+  ]
 }

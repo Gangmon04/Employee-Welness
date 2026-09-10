@@ -113,7 +113,7 @@ export default function App() {
       .catch((err) => {
         if (!isMounted) return
         console.error('Failed to load PMS live data:', err)
-        setFetchError('Unable to fetch live PMS services. Please check network connection.')
+        setFetchError(err.message || 'Unable to fetch live PMS services.')
       })
       .finally(() => {
         if (isMounted) setLoadingData(false)
