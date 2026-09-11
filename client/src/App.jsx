@@ -172,22 +172,99 @@ function getServiceIcon(serviceName = '') {
   if (n.includes('ortho') || n.includes('bone')) return 'ti-bone'
   if (n.includes('paed') || n.includes('ped') || n.includes('child')) return 'ti-baby-carriage'
   if (n.includes('cardio') || n.includes('heart')) return 'ti-heart-rate-monitor'
-  if (n.includes('physio') || n.includes('therapy')) return 'ti-run'
-  if (n.includes('dent') || n.includes('tooth') || n.includes('teeth')) return 'ti-dental'
+  if (n.includes('physio') || n.includes('therapy') || n.includes('rehab')) return 'ti-run'
+  if (n.includes('dent') || n.includes('tooth') || n.includes('teeth') || n.includes('oral')) return 'ti-dental'
   if (n.includes('eye') || n.includes('ophth')) return 'ti-eye'
   if (n.includes('neuro') || n.includes('brain')) return 'ti-brain'
-  if (n.includes('gyn') || n.includes('women')) return 'ti-gender-female'
-  if (n.includes('ent') || n.includes('ear') || n.includes('nose')) return 'ti-ear'
+  if (n.includes('gyn') || n.includes('women') || n.includes('obstet')) return 'ti-gender-female'
+  if (n.includes('ent') || n.includes('ear') || n.includes('nose') || n.includes('throat')) return 'ti-ear'
+  if (n.includes('uro') || n.includes('nephro') || n.includes('kidney') || n.includes('renal')) return 'ti-droplet'
+  if (n.includes('pulmo') || n.includes('lung') || n.includes('chest') || n.includes('respira')) return 'ti-wind'
+  if (n.includes('gastro') || n.includes('digest') || n.includes('stomach') || n.includes('liver')) return 'ti-pill'
+  if (n.includes('endo') || n.includes('diabet') || n.includes('thyroid')) return 'ti-activity'
+  if (n.includes('onco') || n.includes('cancer')) return 'ti-ribbon'
+  if (n.includes('psych') || n.includes('mental')) return 'ti-mood-plus'
+  if (n.includes('surg')) return 'ti-cut'
+  if (n.includes('diet') || n.includes('nutri')) return 'ti-apple'
   return 'ti-stethoscope'
+}
+
+function getServiceDescription(service) {
+  if (service?.description && service.description.trim()) {
+    return service.description.trim()
+  }
+  const n = String(service?.name || '').toLowerCase()
+  if (n.includes('nephro') || n.includes('kidney') || n.includes('renal')) {
+    return 'Kidney care, renal function review, and urinary health consultations.'
+  }
+  if (n.includes('cardio') || n.includes('heart')) {
+    return 'Heart health, ECG, chest pain, and blood pressure review.'
+  }
+  if (n.includes('derma') || n.includes('skin')) {
+    return 'Skin care, acne, rashes, hair, and allergy consultations.'
+  }
+  if (n.includes('ortho') || n.includes('bone') || n.includes('joint')) {
+    return 'Bone, joint pain, fractures, arthritis, and mobility care.'
+  }
+  if (n.includes('paed') || n.includes('ped') || n.includes('child')) {
+    return 'Child healthcare, vaccinations, and pediatric growth monitoring.'
+  }
+  if (n.includes('gyn') || n.includes('women') || n.includes('obstet')) {
+    return 'Women’s wellness, prenatal checkups, and reproductive health.'
+  }
+  if (n.includes('dent') || n.includes('tooth') || n.includes('oral')) {
+    return 'Dental checkups, tooth pain, cleaning, and oral care.'
+  }
+  if (n.includes('ent') || n.includes('ear') || n.includes('throat')) {
+    return 'Ear, nose, throat conditions, sinus, and hearing checkups.'
+  }
+  if (n.includes('eye') || n.includes('ophth')) {
+    return 'Vision exams, eye infections, and ocular health checkups.'
+  }
+  if (n.includes('neuro') || n.includes('brain')) {
+    return 'Headache, migraines, nerve health, and neurological review.'
+  }
+  if (n.includes('uro')) {
+    return 'Urinary tract health, bladder care, and urological consultations.'
+  }
+  if (n.includes('pulmo') || n.includes('lung') || n.includes('chest') || n.includes('respira')) {
+    return 'Asthma, chronic cough, lung health, and respiratory care.'
+  }
+  if (n.includes('gastro') || n.includes('digest') || n.includes('stomach') || n.includes('liver')) {
+    return 'Digestive wellness, acid reflux, stomach, and liver care.'
+  }
+  if (n.includes('endo') || n.includes('diabet') || n.includes('thyroid') || n.includes('hormone')) {
+    return 'Diabetes management, thyroid disorders, and endocrine wellness.'
+  }
+  if (n.includes('onco') || n.includes('cancer')) {
+    return 'Oncology evaluations, cancer screenings, and specialized therapy care.'
+  }
+  if (n.includes('psych') || n.includes('mental')) {
+    return 'Mental wellness, stress management, anxiety, and psychological support.'
+  }
+  if (n.includes('physio') || n.includes('therapy') || n.includes('rehab')) {
+    return 'Physical therapy, rehabilitation, muscle recovery, and pain relief.'
+  }
+  if (n.includes('rheuma') || n.includes('arthrit')) {
+    return 'Autoimmune conditions, joint inflammation, and rheumatology care.'
+  }
+  if (n.includes('surg')) {
+    return 'Surgical consultations, wound evaluations, and pre-op assessments.'
+  }
+  if (n.includes('diet') || n.includes('nutri')) {
+    return 'Personalized nutrition counseling, diet planning, and metabolic health.'
+  }
+  if (n.includes('medic') || n.includes('general') || n.includes('physician') || n.includes('consult')) {
+    return 'Fever, infections, blood pressure, and diabetes review.'
+  }
+  return 'Comprehensive clinical consultation, evaluation, and care.'
 }
 
 function DoctorAvatar({ doctor, isSelected, initials }) {
   const [imgError, setImgError] = useState(false)
-  const imageSrc = doctor?.id
-    ? (doctor.image && doctor.image.startsWith('/server')
-        ? doctor.image
-        : `/server/pms_appointment_service/doctor-image?id=${doctor.id}${doctor.zuid ? `&zuid=${doctor.zuid}` : ''}`)
-    : doctor?.image
+  const imageSrc = doctor?.image || (doctor?.id
+    ? `/server/pms_appointment_service/doctor-image?id=${doctor.id}${doctor.zuid ? `&zuid=${doctor.zuid}` : ''}`
+    : null)
   const hasImage = Boolean(imageSrc && !imgError)
 
   return (
@@ -270,7 +347,16 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(null)
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [timeFilter, setTimeFilter] = useState('all')
+  const [disabledDateNotice, setDisabledDateNotice] = useState(null)
   const todayKey = useMemo(() => iso(new Date()), [])
+
+  useEffect(() => {
+    if (!disabledDateNotice) return
+    const timer = setTimeout(() => {
+      setDisabledDateNotice(null)
+    }, 4000)
+    return () => clearTimeout(timer)
+  }, [disabledDateNotice])
 
   // Step 3: Patient Inputs & PMS Matching
   const [first, setFirst] = useState('')
@@ -337,6 +423,11 @@ export default function App() {
     }
   }, [hospitalInfo?.name])
 
+  // Reset scroll to top on step transitions
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [step])
+
   // Prepopulate from URL params if provided (?first=Ganga&last=Elumalai&mobile=9876543210)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -378,7 +469,7 @@ export default function App() {
     }
   }, [selectedDate, selectedDoctorId])
 
-  const selectedService = displayServices.find((s) => String(s.id) === String(selectedServiceId)) || services.find((s) => String(s.id) === String(selectedServiceId)) || null
+  const selectedService = displayServices.find((s) => String(s.id) === String(selectedServiceId)) || services.find((s) => String(s.id) === String(selectedServiceId)) || displayServices[0] || services[0] || null
 
   // Filter to show only doctors associated with the selected service in PMS
   const availableDoctors = useMemo(() => {
@@ -418,8 +509,8 @@ export default function App() {
 
   const autoName = () => {
     const patientFullName = `${first} ${last}`.trim()
-    if (!selectedService) return ''
-    return patientFullName ? `${selectedService.name} — ${patientFullName}` : selectedService.name
+    const svcName = (selectedService?.name || selectedService?.Service_Name || 'Consultation').trim()
+    return patientFullName ? `${svcName} - ${patientFullName}` : svcName
   }
 
   const effectiveApptName = apptEdited ? apptName : autoName()
@@ -520,7 +611,7 @@ export default function App() {
       let statusReason = ''
       if (allSlotsPassed) statusReason = 'All slots for today have ended'
       else if (holidayName) statusReason = `Clinic Holiday: ${holidayName}`
-      else if (isDoctorLeave) statusReason = 'Doctor on leave'
+      else if (isDoctorLeave) statusReason = 'Doctor is unavailable'
       else if (isClosedDay || isDayOff) statusReason = `Closed on ${dayName}s`
 
       list.push({
@@ -538,15 +629,20 @@ export default function App() {
     return list
   }, [scheduleConfig, selectedDoctorId, selectedDate])
 
-  // Select the first enabled date automatically on initial load
+  // Auto-select the first enabled date on load or when doctor changes if current date is disabled
   useEffect(() => {
-    if (!selectedDate) {
+    const curMeta = dates.find((d) => d.key === selectedDate)
+    if (!selectedDate || (curMeta && curMeta.disabled)) {
       const firstActive = dates.find((d) => !d.disabled)
       if (firstActive) {
         setSelectedDate(firstActive.key)
+        setSelectedSlot(null)
+      } else {
+        setSelectedDate(null)
+        setSelectedSlot(null)
       }
     }
-  }, [dates, selectedDate])
+  }, [dates, selectedDoctorId])
 
   // Generate time slots based on real Duration, Working Blocks, Doctor Unavailability, and Bookings
   const slotList = useMemo(() => {
@@ -597,11 +693,16 @@ export default function App() {
         const isBooked = bookedSlots.includes(label)
         const isOnLeave = partialLeaves.some(([lf, lt]) => m < lt && m + duration > lf)
 
+        // If slot falls during doctor leave, skip it so it is not shown as strikethrough
+        if (isOnLeave) {
+          continue
+        }
+
         out.push({
           m,
           label,
-          taken: isBooked || isOnLeave,
-          reason: isBooked ? 'Already booked' : isOnLeave ? 'Doctor unavailable' : ''
+          taken: isBooked,
+          reason: isBooked ? 'Already booked' : ''
         })
       }
     }
@@ -627,6 +728,15 @@ export default function App() {
     if (timeFilter === 'night') return slotList.filter((s) => s.m >= 1260 || s.m < 360)
     return slotList
   }, [slotList, timeFilter])
+
+  const selectedDateMeta = useMemo(() => {
+    return dates.find((d) => d.key === selectedDate) || null
+  }, [dates, selectedDate])
+
+  const isDoctorOnLeave = Boolean(
+    selectedDateMeta?.isOnLeave ||
+    (slotList.length > 0 && slotList.every((s) => s.taken && s.reason?.toLowerCase().includes('unavailable')))
+  )
 
   const validate = () => {
     const errs = {}
@@ -665,13 +775,15 @@ export default function App() {
           matchedPatientId: isExactOrPrefillMatch ? (matchedPatient?.id || null) : null,
           doctor: selectedDoctor ? { id: selectedDoctor.id, name: selectedDoctor.name } : null,
           doctorId: selectedDoctor?.id,
-          service: selectedService ? { id: selectedService.id, name: selectedService.name, duration: selectedService.duration } : null,
+          service: selectedService ? { id: selectedService.id, name: selectedService.name || selectedService.Service_Name || 'Consultation', duration: selectedService.duration } : null,
           departmentId: selectedService?.id,
           duration: selectedService?.duration || 30,
           visitDate: selectedDate,
           startTime: selectedSlot,
           priority: priority || 'Routine',
-          appointmentName: effectiveApptName || `${selectedService?.name} - ${first} ${last}`.trim(),
+          appointmentName: (effectiveApptName && !effectiveApptName.startsWith('null -') && !effectiveApptName.startsWith('undefined -'))
+            ? effectiveApptName.trim()
+            : `${(selectedService?.name || selectedService?.Service_Name || 'Consultation').trim()} - ${first} ${last}`.trim(),
           chiefComplaint: complaint.trim(),
           additionalInfo: extra.trim()
         }
@@ -683,7 +795,7 @@ export default function App() {
         setErrors({})
       } catch (err) {
         console.error('Appointment booking error:', err)
-        setSubmitError('Unable to confirm your appointment right now. Please choose another slot or try again.')
+        setSubmitError(err.message || 'Unable to confirm your appointment right now. Please choose another slot or try again.')
       } finally {
         setSubmitting(false)
       }
@@ -746,7 +858,7 @@ export default function App() {
     { num: '1', label: 'Department', value: selectedService ? selectedService.name : 'Choose department' },
     { num: '2', label: 'Doctor & time', value: selectedDoctor && selectedSlot ? `${selectedDoctor.name} · ${selectedSlot}` : 'Pick doctor & slot' },
     { num: '3', label: 'Patient details', value: first || last ? `${first} ${last}`.trim() : 'Name and mobile' },
-    { num: '4', label: 'Confirm', value: bookingRef ? String(bookingRef) : 'Review and book' }
+    { num: '4', label: 'Confirm', value: bookingRef ? 'Confirmed' : 'Review and book' }
   ]
 
   const reviewRows = [
@@ -914,18 +1026,11 @@ export default function App() {
             })}
           </ol>
 
-          <div className="pms-info-card">
-            <div className="pms-info-card__title">
-             At the clinic
-            </div>
-            <p className="pms-info-card__desc">
-             Appointments booked here are created in the clinic's records. Carry a photo ID and report to the front desk ten minutes early.
-            </p>
-          </div>
+
         </aside>
 
         {/* Wizard Form Card */}
-        <section className="wizard-card">
+        <section className={`wizard-card ${step === 5 ? 'wizard-card--confirmed' : ''}`}>
           {/* Card Step Header */}
           <div className="wizard-card__header">
             <div className="wizard-card__title-group">
@@ -1028,7 +1133,7 @@ export default function App() {
                           </div>
 
                           <div className="service-card__desc desktop-only">
-                            {s.description || 'Fever, infections, blood pressure and diabetes review.'}
+                            {getServiceDescription(s)}
                           </div>
 
                           <div className="service-card__footer desktop-only">
@@ -1070,6 +1175,7 @@ export default function App() {
                           onClick={() => {
                             setSelectedDoctorId(d.id)
                             setSelectedSlot(null)
+                            setDisabledDateNotice(null)
                             clearError('doctor')
                           }}
                           className={`select-card ${on ? 'is-selected' : ''}`}
@@ -1106,56 +1212,47 @@ export default function App() {
                     <span className="section-divider__line"></span>
                   </div>
 
-                  <div className="schedule-params-grid">
-                    <div className="form-group">
-                      <label className="form-label">
-                        Appointment date <span className="form-required">*</span>
-                      </label>
-                      <DateField
-                        value={selectedDate ? new Date(`${selectedDate}T00:00:00`) : null}
-                        minDate={new Date()}
-                        onChange={(d) => {
-                          const pad = (n) => String(n).padStart(2, '0')
-                          setSelectedDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`)
-                          setSelectedSlot(null)
-                          clearError('slot')
-                        }}
-                        error={!!errors.slot && !selectedDate}
-                      />
-                      <span className="form-hint">Choose a date or pick below</span>
-                    </div>
-
-                    <div className="form-group">
-                      <span className="form-label">Duration</span>
-                      <span className="form-control form-control--readonly">
-                        {selectedService ? `${selectedService.duration} mins` : '30 mins'}
-                        <i className="ti ti-lock icon-right"></i>
-                      </span>
-                      <span className="form-hint">From the service record</span>
-                    </div>
+                  <div className="form-group appointment-date-group">
+                    <label className="form-label">
+                      Appointment date <span className="form-required">*</span>
+                    </label>
+                    <DateField
+                      value={selectedDate ? new Date(`${selectedDate}T00:00:00`) : null}
+                      minDate={new Date()}
+                      onChange={(d) => {
+                        const pad = (n) => String(n).padStart(2, '0')
+                        setSelectedDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`)
+                        setSelectedSlot(null)
+                        clearError('slot')
+                      }}
+                      error={!!errors.slot && !selectedDate}
+                    />
+                    <span className="form-hint">Choose a date or pick below</span>
                   </div>
 
                   {/* 21-day Date Buttons */}
                   <div className="date-strip">
                     {dates.map((dt) => {
-                      const on = dt.key === selectedDate
+                      const on = dt.key === selectedDate && !dt.disabled
                       const holidayClass = dt.isHoliday ? 'is-holiday' : ''
-                      const leaveClass = dt.isOnLeave ? 'is-on-leave' : ''
                       const pastClass = dt.isPast ? 'is-past' : ''
                       return (
                         <button
                           key={dt.key}
                           type="button"
-                          disabled={dt.disabled}
+                          aria-disabled={dt.disabled}
                           title={dt.reason || (dt.disabled ? 'Unavailable' : dt.dow)}
                           onClick={() => {
-                            if (!dt.disabled) {
+                            if (dt.disabled) {
+                              setDisabledDateNotice(`${dt.dow}, ${dt.day} ${dt.mon}: ${dt.reason || 'Unavailable'}`)
+                            } else {
+                              setDisabledDateNotice(null)
                               setSelectedDate(dt.key)
                               setSelectedSlot(null)
                               clearError('slot')
                             }
                           }}
-                          className={`date-btn ${on ? 'is-selected' : ''} ${holidayClass} ${leaveClass} ${pastClass}`}
+                          className={`date-btn ${on ? 'is-selected' : ''} ${dt.disabled ? 'is-disabled' : ''} ${holidayClass} ${pastClass}`}
                         >
                           <span className="date-btn__dow">{dt.dow}</span>
                           <span className="date-btn__day">{dt.day}</span>
@@ -1165,6 +1262,21 @@ export default function App() {
                     })}
                   </div>
 
+                  {disabledDateNotice && (
+                    <div className="date-strip-notice">
+                      <i className="ti ti-info-circle"></i>
+                      <span>{disabledDateNotice}</span>
+                      <button
+                        type="button"
+                        className="date-strip-notice__close"
+                        onClick={() => setDisabledDateNotice(null)}
+                        aria-label="Dismiss notice"
+                      >
+                        <i className="ti ti-x"></i>
+                      </button>
+                    </div>
+                  )}
+
                   {/* Available Time Slots */}
                   <div className="form-group">
                     <span className="form-label">
@@ -1172,107 +1284,109 @@ export default function App() {
                       {errors.slot && <span className="section-error push-right">{errors.slot}</span>}
                     </span>
 
-                    {/* Time of Day Period Filter Tabs for 24-Hour Slots */}
-                    {slotList.length > 0 && (
-                      <div className="slot-filter-tabs">
-                        <button
-                          type="button"
-                          onClick={() => setTimeFilter('all')}
-                          className={`slot-filter-btn ${timeFilter === 'all' ? 'is-active' : ''}`}
-                        >
-                          All ({filterCounts.all})
-                        </button>
-                        {filterCounts.morning > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setTimeFilter('morning')}
-                            className={`slot-filter-btn ${timeFilter === 'morning' ? 'is-active' : ''}`}
-                          >
-                            Morning ({filterCounts.morning})
-                          </button>
-                        )}
-                        {filterCounts.afternoon > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setTimeFilter('afternoon')}
-                            className={`slot-filter-btn ${timeFilter === 'afternoon' ? 'is-active' : ''}`}
-                          >
-                            Afternoon ({filterCounts.afternoon})
-                          </button>
-                        )}
-                        {filterCounts.evening > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setTimeFilter('evening')}
-                            className={`slot-filter-btn ${timeFilter === 'evening' ? 'is-active' : ''}`}
-                          >
-                            Evening ({filterCounts.evening})
-                          </button>
-                        )}
-                        {filterCounts.night > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setTimeFilter('night')}
-                            className={`slot-filter-btn ${timeFilter === 'night' ? 'is-active' : ''}`}
-                          >
-                            Night ({filterCounts.night})
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    {slotList.length > 0 ? (
-                      displaySlots.length > 0 ? (
-                        <div className="slots-grid">
-                          {displaySlots.map((s) => {
-                            const on = selectedSlot === s.label
-                            return (
-                              <button
-                                key={s.label}
-                                type="button"
-                                disabled={s.taken}
-                                title={s.reason || undefined}
-                                onClick={() => {
-                                  if (!s.taken) {
-                                    setSelectedSlot(s.label)
-                                    clearError('slot')
-                                  }
-                                }}
-                                className={`slot-btn ${on ? 'is-selected' : ''} ${s.taken ? 'is-taken' : ''}`}
-                              >
-                                {s.label}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      ) : (
-                        <div className="info-banner">
-                          <i className="ti ti-info-circle"></i>
-                          <span>No slots available in this time window. Select "All" above to see all slots.</span>
-                        </div>
-                      )
-                    ) : (
+                    {isDoctorOnLeave ? (
                       <div className="info-banner">
                         <i className="ti ti-info-circle"></i>
                         <span>
-                          {!selectedDate
-                            ? 'Select a date above to display available consultation slots.'
-                            : selectedDate === iso(new Date())
-                            ? 'All consultation slots for today have ended. Please select an upcoming date.'
-                            : 'No slots remain on this date. Please select another day.'}
+                          {selectedDoctor ? (selectedDoctor.name.startsWith('Dr.') ? selectedDoctor.name : `Dr. ${selectedDoctor.name}`) : 'Doctor'} is unavailable on this date. Please select another date.
                         </span>
                       </div>
+                    ) : (
+                      <>
+                        {/* Time of Day Period Filter Tabs for 24-Hour Slots */}
+                        {slotList.length > 0 && (
+                          <div className="slot-filter-tabs">
+                            <button
+                              type="button"
+                              onClick={() => setTimeFilter('all')}
+                              className={`slot-filter-btn ${timeFilter === 'all' ? 'is-active' : ''}`}
+                            >
+                              All ({filterCounts.all})
+                            </button>
+                            {filterCounts.morning > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setTimeFilter('morning')}
+                                className={`slot-filter-btn ${timeFilter === 'morning' ? 'is-active' : ''}`}
+                              >
+                                Morning ({filterCounts.morning})
+                              </button>
+                            )}
+                            {filterCounts.afternoon > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setTimeFilter('afternoon')}
+                                className={`slot-filter-btn ${timeFilter === 'afternoon' ? 'is-active' : ''}`}
+                              >
+                                Afternoon ({filterCounts.afternoon})
+                              </button>
+                            )}
+                            {filterCounts.evening > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setTimeFilter('evening')}
+                                className={`slot-filter-btn ${timeFilter === 'evening' ? 'is-active' : ''}`}
+                              >
+                                Evening ({filterCounts.evening})
+                              </button>
+                            )}
+                            {filterCounts.night > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setTimeFilter('night')}
+                                className={`slot-filter-btn ${timeFilter === 'night' ? 'is-active' : ''}`}
+                              >
+                                Night ({filterCounts.night})
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {slotList.length > 0 ? (
+                          displaySlots.length > 0 ? (
+                            <div className="slots-grid">
+                              {displaySlots.map((s) => {
+                                const on = selectedSlot === s.label
+                                return (
+                                  <button
+                                    key={s.label}
+                                    type="button"
+                                    disabled={s.taken}
+                                    title={s.reason || undefined}
+                                    onClick={() => {
+                                      if (!s.taken) {
+                                        setSelectedSlot(s.label)
+                                        clearError('slot')
+                                      }
+                                    }}
+                                    className={`slot-btn ${on ? 'is-selected' : ''} ${s.taken ? 'is-taken' : ''}`}
+                                  >
+                                    {s.label}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <div className="info-banner">
+                              <i className="ti ti-info-circle"></i>
+                              <span>No slots available in this time window. Select "All" above to see all slots.</span>
+                            </div>
+                          )
+                        ) : (
+                          <div className="info-banner">
+                            <i className="ti ti-info-circle"></i>
+                            <span>
+                              {!selectedDate
+                                ? 'Select a date above to display available consultation slots.'
+                                : selectedDate === iso(new Date())
+                                ? 'All consultation slots for today have ended. Please select an upcoming date.'
+                                : 'No slots remain on this date. Please select another day.'}
+                            </span>
+                          </div>
+                        )}
+                      </>
                     )}
 
-                    {/* <div className="schedule-hint-row">
-                      <span className="form-hint">
-                        {scheduleConfig.businessHours?.type === '24_by_7' || String(scheduleConfig.businessHours?.business_hours).includes('24')
-                          ? 'Clinic open 24 Hours (Mon – Sun) · 24/7 round-the-clock consultation slots'
-                          : hospitalInfo?.businessHours
-                          ? `Clinic Hours: ${hospitalInfo.businessHours}`
-                          : 'Consultation slots follow clinic hours and doctor shift schedule.'}
-                      </span>
-                    </div> */}
                   </div>
                 </div>
               </div>
@@ -1348,13 +1462,7 @@ export default function App() {
                         variant="found"
                         lead="Existing patient found — this appointment will be booked under their record, so history and balance stay in one place."
                         matches={[
-                          patientMatchRow(matchedPatient, [
-                            {
-                              label: 'View full record',
-                              icon: 'ti-external-link',
-                              onClick: () => setDetailPatient(matchedPatient)
-                            }
-                          ])
+                          patientMatchRow(matchedPatient)
                         ]}
                         foot="Name and mobile number both match this record, so the appointment is booked under it. To book someone else, change the name or the number."
                       />
@@ -1373,11 +1481,6 @@ export default function App() {
                                 setFirst(matchedPatient.firstName || parts[0] || '')
                                 setLast(matchedPatient.lastName || parts.slice(1).join(' ') || '')
                               }
-                            },
-                            {
-                              label: 'View full record',
-                              icon: 'ti-external-link',
-                              onClick: () => setDetailPatient(matchedPatient)
                             }
                           ])
                         ]}
@@ -1492,22 +1595,13 @@ export default function App() {
                   </span>
                 </div>
 
-                <div className="confirmation-badge-box">
-                  <div className="summary-item__label">
-                    Appointment Reference
-                  </div>
-                  <div className="confirmation-ref">{bookingRef}</div>
-                </div>
 
-                <p className="pms-info-card__desc">
-                  Your appointment has been successfully confirmed and recorded for +91 {cleanMobile}.
-                </p>
 
-                <div>
+                <div className="confirmation-actions">
                   <button
                     type="button"
                     onClick={handleRestart}
-                    className="btn-secondary"
+                    className="btn-secondary btn-restart"
                   >
                     <i className="ti ti-plus"></i>Book another appointment
                   </button>
@@ -1536,7 +1630,7 @@ export default function App() {
                 <span className="wizard-footer__hint desktop-only">
                   {step === 1 ? (selectedService ? `${selectedService.duration}-minute consultation selected` : 'Select a department') :
                    step === 2 ? (selectedSlot ? `${dateLabel} at ${selectedSlot}` : 'Doctor, date and time required') :
-                   step === 3 ? 'Fields marked * are required' :
+                   step === 3 ? '' :
                    'Confirms your appointment with the clinic'}
                 </span>
 
@@ -1550,8 +1644,6 @@ export default function App() {
                   <i className={submitting ? 'ti ti-loader' : step === 4 ? 'ti ti-check' : 'ti ti-chevron-right'}></i>
                 </button>
               </div>
-
-              <div className="mobile-home-indicator"></div>
             </div>
           )}
 

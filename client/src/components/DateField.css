@@ -2,18 +2,18 @@
 
 /* ---------- shared control shell ---------- */
 .ctl-shell {
-  height: 34px;
+  height: 48px;
   box-sizing: border-box;
-  padding: 0 10px;
-  border: 1px solid var(--input-border, #d6e4ed);
-  border-radius: 6px;
+  padding: 0 14px;
+  border: 1.5px solid var(--input-border, #d6e4ed);
+  border-radius: 8px;
   background: var(--input-bg, #f4f9fc);
   display: flex;
   align-items: center;
   gap: 8px;
   font: inherit;
   font-family: var(--font-base, "Zoho_Puvi", sans-serif);
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--font-color, #2f4268);
   text-align: left;
   cursor: pointer;

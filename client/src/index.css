@@ -201,8 +201,14 @@ select:focus {
   outline: none;
 }
 
+.form-control input,
 .form-control input:focus,
-.form-control-textarea textarea:focus {
+.form-control input:active,
+.form-control input:focus-visible,
+.form-control-textarea textarea,
+.form-control-textarea textarea:focus,
+.form-control-textarea textarea:active,
+.form-control-textarea textarea:focus-visible {
   border: none !important;
   background: transparent !important;
   box-shadow: none !important;

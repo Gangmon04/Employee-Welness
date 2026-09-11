@@ -53,10 +53,10 @@ async function resolveAppointmentFor({ patientName, firstName, lastName, mobileN
 		};
 	}
 
-	// 2. Search Patient module using COQL
+	// 2. Search Patient module using COQL (matches with or without country code prefix, e.g. +91)
 	if (cleanMobile) {
 		try {
-			const pCoql = await zrc.coql(`select id, Full_Name, Mobile_No from Patient where Mobile_No = '${cleanMobile}'`);
+			const pCoql = await zrc.coql(`select id, Full_Name, Mobile_No from Patient where Mobile_No like '%${cleanMobile}'`);
 			if (pCoql.ok && pCoql.data?.data?.[0]?.id) {
 				return {
 					id: String(pCoql.data.data[0].id),
@@ -83,63 +83,33 @@ async function resolveAppointmentFor({ patientName, firstName, lastName, mobileN
 		}
 	}
 
-	// 3. No existing Patient found -> Search Contacts module via COQL to reuse existing contact
-	if (cleanMobile) {
-		try {
-			const cCoql = await zrc.coql(`select id, Full_Name, Phone, Mobile from Contacts where Phone = '${cleanMobile}' or Mobile = '${cleanMobile}'`);
-			if (cCoql.ok && cCoql.data?.data?.[0]?.id) {
-				return {
-					id: String(cCoql.data.data[0].id),
-					module: { api_name: 'Contacts' },
-					isProspect: true
-				};
-			}
-		} catch (err) {
-			console.warn('ZRC Contacts COQL error, falling back to search API:', err.message);
-			try {
-				const cRes = await zrc.get('/crm/v8/Contacts/search', {
-					params: { phone: cleanMobile }
-				});
-				if (cRes.ok && cRes.data?.data?.[0]?.id) {
-					return {
-						id: String(cRes.data.data[0].id),
-						module: { api_name: 'Contacts' },
-						isProspect: true
-					};
-				}
-			} catch (cErr) {
-				console.warn('Contacts fallback search error:', cErr.message);
-			}
-		}
-	}
-
-	// 4. Create new lightweight prospect Contact in Contacts module using ZRC POST
+	// 3. No existing Patient found -> Register new Patient in Patient module using ZRC POST
 	const fName = firstName || fullName.split(' ')[0] || '';
-	const lName = lastName || fullName.split(' ').slice(1).join(' ') || fName || 'Prospect';
+	const lName = lastName || fullName.split(' ').slice(1).join(' ') || fName || 'Patient';
 	const indiaMobile = cleanMobile ? `+91${cleanMobile}` : (mobileNumber || '');
 
-	const newContactRes = await zrc.post('/crm/v8/Contacts', {
+	const newPatientRes = await zrc.post('/crm/v8/Patient', {
 		data: [{
 			First_Name: fName,
 			Last_Name: lName,
-			Mobile: indiaMobile,
-			Phone: indiaMobile,
-			...(email ? { Email: email } : {}),
-			Lead_Source: ''
+			Full_Name: fullName || `${fName} ${lName}`.trim(),
+			Mobile_No: indiaMobile,
+			Patient_Type: 'OP',
+			...(email ? { Email: email } : {})
 		}],
 		trigger: ['workflow']
 	});
 
-	const createdContactId = newContactRes.data?.data?.[0]?.details?.id;
-	if (createdContactId) {
+	const createdPatientId = newPatientRes.data?.data?.[0]?.details?.id;
+	if (createdPatientId) {
 		return {
-			id: String(createdContactId),
-			module: { api_name: 'Contacts' },
-			isProspect: true
+			id: String(createdPatientId),
+			module: { api_name: 'Patient' },
+			isProspect: false
 		};
 	}
 
-	throw new Error(`Could not register prospect Contact in PMS: ${newContactRes.data?.data?.[0]?.message || 'Unknown error'}`);
+	throw new Error(`Could not register new Patient in PMS: ${newPatientRes.data?.data?.[0]?.message || 'Unknown error'}`);
 }
 
 module.exports = async (req, res) => {
@@ -351,23 +321,30 @@ module.exports = async (req, res) => {
 
 				let imgRes = null;
 
-				// 1. Try contacts.zoho.in with OAuth token
+				// 1. Try profile.zoho.in with OAuth token
 				if (targetZuid) {
 					try {
-						imgRes = await zrc.getRaw(`https://contacts.zoho.in/file?ID=${targetZuid}&fs=thumb`);
+						imgRes = await zrc.getRaw(`https://profile.zoho.in/file?ID=${targetZuid}&fs=thumb`);
 					} catch (cErr) {
-						console.warn('Contacts fetch error:', cErr.message);
+						console.warn('Profile fetch error:', cErr.message);
 					}
 				}
 
-				// 2. Try contacts.zoho.in without OAuth token as well
+				// 2. Try profile.zoho.in without OAuth token as well
+				if ((!imgRes || !imgRes.ok) && targetZuid) {
+					try {
+						imgRes = await fetch(`https://profile.zoho.in/file?ID=${targetZuid}&fs=thumb`);
+					} catch (cErr) {}
+				}
+
+				// 3. Fallback to contacts.zoho.in
 				if ((!imgRes || !imgRes.ok) && targetZuid) {
 					try {
 						imgRes = await fetch(`https://contacts.zoho.in/file?ID=${targetZuid}&fs=thumb`);
 					} catch (cErr) {}
 				}
 
-				// 3. Try CRM user photo endpoint via ZRC raw
+				// 4. Try CRM user photo endpoint via ZRC raw
 				if ((!imgRes || !imgRes.ok) && id) {
 					try {
 						imgRes = await zrc.getRaw(`/crm/v8/users/${id}/photo`);
@@ -418,13 +395,18 @@ module.exports = async (req, res) => {
 				});
 				const users = pmsRes.data?.users || [];
 				const doctors = users
-					.filter(u => u.profile?.name === 'Doctor' || u.role?.name === 'Doctor' || u.profile?.name === 'Administrator' || u.role?.name === 'CEO / MD')
+					.filter(u => u.profile?.name === 'Doctor' || u.role?.name === 'Doctor' || u.Department || u.Medical_Degrees || u.profile?.name === 'Administrator' || u.role?.name === 'CEO / MD')
+					.sort((a, b) => {
+						const aDoc = (a.role?.name === 'Doctor' || a.profile?.name === 'Doctor' || a.Department) ? 1 : 0;
+						const bDoc = (b.role?.name === 'Doctor' || b.profile?.name === 'Doctor' || b.Department) ? 1 : 0;
+						return bDoc - aDoc;
+					})
 					.map(u => {
 						const zuid = u.zuid || null;
 						if (u.id && zuid) {
 							doctorZuidCache.set(String(u.id), String(zuid));
 						}
-						const image = `/server/pms_appointment_service/doctor-image?id=${u.id}${zuid ? `&zuid=${zuid}` : ''}`;
+						const image = u.image_link || (zuid ? `https://profile.zoho.in/file?ID=${zuid}&fs=thumb` : `/server/pms_appointment_service/doctor-image?id=${u.id}`);
 						const medicalDegrees = u.Medical_Degrees || u.medical_degrees || u.qualification || '';
 						return {
 							id: u.id,
@@ -527,9 +509,9 @@ module.exports = async (req, res) => {
 			const cleanMobile = String(mobileParam).replace(/\D/g, '').slice(-10);
 
 			try {
-				// COQL query for targeted patient retrieval
+				// COQL query for targeted patient retrieval (matches with or without country code prefix, e.g. +91)
 				const coqlRes = await zrc.coql(
-					`select id, Name, Full_Name, First_Name, Last_Name, Mobile_No, Email, Age1, Gender, UHID, Blood_Group, Date_of_Birth, Address_Line_1, City, State from Patient where Mobile_No = '${cleanMobile}'`
+					`select id, Name, Full_Name, First_Name, Last_Name, Mobile_No, Email, Age1, Gender, UHID, Blood_Group, Date_of_Birth, Address_Line_1, City, State from Patient where Mobile_No like '%${cleanMobile}'`
 				);
 
 				if (coqlRes.ok && coqlRes.data?.data?.[0]) {
@@ -751,21 +733,43 @@ module.exports = async (req, res) => {
 				});
 			}
 
-			// 2. Resolve Service / Department ID
+			// 2. Resolve Service / Department ID & valid Members
 			let serviceId = service?.id || department?.id;
-			let serviceName = service?.name || department?.name || 'Consultation';
+			let serviceName = (service?.name || department?.name || service?.Service_Name || department?.Service_Name || '').trim();
 			let serviceDuration = duration || service?.duration || department?.duration || 30;
+			let serviceMembers = [];
+
+			if (serviceId) {
+				try {
+					const sRes = await zrc.get(`/crm/v8/Services__s/${serviceId}`, {
+						params: { fields: 'id,Service_Name,Name,Duration,Members' }
+					});
+					const sData = sRes.data?.data?.[0];
+					if (sData) {
+						serviceName = (sData.Service_Name || sData.Name || serviceName || '').trim();
+						serviceDuration = Number(sData.Duration) || serviceDuration;
+						if (Array.isArray(sData.Members)) {
+							serviceMembers = sData.Members.map(m => String(m.Members?.id || m.id)).filter(Boolean);
+						}
+					}
+				} catch (sErr) {
+					console.warn('Could not fetch single service details:', sErr.message);
+				}
+			}
 
 			if (!serviceId) {
 				try {
 					const sRes = await zrc.get('/crm/v8/Services__s', {
-						params: { fields: 'id,Service_Name,Duration', per_page: 1 }
+						params: { fields: 'id,Service_Name,Name,Duration,Members', per_page: 1 }
 					});
 					const firstService = sRes.data?.data?.[0];
 					if (firstService) {
 						serviceId = firstService.id;
-						serviceName = firstService.Service_Name;
-						serviceDuration = firstService.Duration || 30;
+						serviceName = (firstService.Service_Name || firstService.Name || serviceName || '').trim();
+						serviceDuration = Number(firstService.Duration) || 30;
+						if (Array.isArray(firstService.Members)) {
+							serviceMembers = firstService.Members.map(m => String(m.Members?.id || m.id)).filter(Boolean);
+						}
 					}
 				} catch (sErr) {
 					console.warn('Could not lookup default service:', sErr.message);
@@ -787,7 +791,17 @@ module.exports = async (req, res) => {
 			const endDateTimeStr = `${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-${pad(endDate.getDate())}T${pad(endDate.getHours())}:${pad(endDate.getMinutes())}:00+05:30`;
 
 			// 4. Construct record for Appointments__s
-			const finalAppointmentName = appointmentName?.trim() || `${serviceName} - ${fullName}`;
+			const cleanServiceName = (serviceName && String(serviceName).trim() !== 'null' && String(serviceName).trim() !== 'undefined')
+				? String(serviceName).trim()
+				: 'Consultation';
+			const rawApptName = typeof appointmentName === 'string' ? appointmentName.trim() : '';
+			const isCorrupted = !rawApptName ||
+				rawApptName.startsWith('null -') ||
+				rawApptName.startsWith('undefined -') ||
+				rawApptName.startsWith('null —') ||
+				rawApptName.startsWith('undefined —');
+
+			const finalAppointmentName = !isCorrupted ? rawApptName : `${cleanServiceName} - ${fullName}`;
 
 			const appointmentRecord = {
 				Appointment_Name: finalAppointmentName,
@@ -809,10 +823,20 @@ module.exports = async (req, res) => {
 			}
 
 			let targetDocId = doctor?.id || body.doctorId;
+
+			// In Zoho PMS Appointments__s, Owner (Doctor) MUST be an assigned member of Services.Members
+			if (serviceMembers.length > 0) {
+				if (!targetDocId || !serviceMembers.includes(String(targetDocId))) {
+					targetDocId = serviceMembers[0];
+				}
+			}
+
 			if (!targetDocId) {
 				try {
-					const uRes = await zrc.get('/crm/v8/users', { params: { type: 'ActiveUsers', per_page: 1 } });
-					targetDocId = uRes.data?.users?.[0]?.id;
+					const uRes = await zrc.get('/crm/v8/users', { params: { type: 'ActiveUsers', per_page: 5 } });
+					const users = uRes.data?.users || [];
+					const clinicalUser = users.find(u => u.profile?.name === 'Doctor' || u.role?.name === 'Doctor') || users[0];
+					targetDocId = clinicalUser?.id;
 				} catch (uErr) {
 					console.warn('Could not fetch default doctor user:', uErr.message);
 				}

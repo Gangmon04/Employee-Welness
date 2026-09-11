@@ -13,6 +13,7 @@ const PRIMARY_CATALYST_URL = (typeof window !== 'undefined' && (
  * Universal fetcher that routes exclusively through Catalyst Serverless Functions (ZRC backend).
  */
 async function fetchCatalyst(path, options = {}) {
+  let networkFailed = false;
   let lastError = null;
 
   // Try primary (local proxy or direct cloud)
@@ -20,24 +21,31 @@ async function fetchCatalyst(path, options = {}) {
     const res = await fetch(`${PRIMARY_CATALYST_URL}${path}`, options);
     const data = await res.json().catch(() => null);
     if (res.ok && data?.ok) return data;
-    if (data?.error) lastError = data.error;
+    if (data) {
+      // Server reached and returned a structured response
+      return { ok: false, error: data.error || data.message || `Request failed with status ${res.status}`, ...data };
+    }
+    lastError = `Request failed with status ${res.status}`;
   } catch (err) {
+    networkFailed = true;
     lastError = err.message;
   }
 
-  // Fallback to CLOUD_CATALYST_URL if primary was relative and failed
-  if (PRIMARY_CATALYST_URL !== CLOUD_CATALYST_URL) {
+  // Fallback to CLOUD_CATALYST_URL only if primary had a true network connection failure
+  if (networkFailed && PRIMARY_CATALYST_URL !== CLOUD_CATALYST_URL) {
     try {
       const cRes = await fetch(`${CLOUD_CATALYST_URL}${path}`, options);
       const cData = await cRes.json().catch(() => null);
       if (cRes.ok && cData?.ok) return cData;
-      if (cData?.error) lastError = cData.error;
+      if (cData) {
+        return { ok: false, error: cData.error || cData.message || `Request failed with status ${cRes.status}`, ...cData };
+      }
     } catch (cErr) {
-      lastError = cErr.message;
+      if (!lastError) lastError = cErr.message;
     }
   }
 
-  return { ok: false, error: lastError };
+  return { ok: false, error: lastError || 'Unable to connect to clinic service. Please try again.' };
 }
 
 /**

@@ -24,31 +24,15 @@ function getInitials(name) {
 
 export function patientMatchRow(p, actions) {
   if (!p) return null;
-  const age = p.age || p.Age1 || p.Age || null;
-  const gender = p.gender || p.Gender || null;
-  const genderLetter = gender ? String(gender)[0].toUpperCase() : null;
   const mobileStr = p.mobile || p.Mobile_No || '';
   const cleanMob = String(mobileStr).replace(/\D/g, '').slice(-10);
-  const mobileDisplay = cleanMob ? `+91${cleanMob}` : '';
-
-  const parts = [];
-  if (age && genderLetter) {
-    parts.push(`${age} / ${genderLetter}`);
-  } else if (age) {
-    parts.push(`${age} yrs`);
-  } else if (gender) {
-    parts.push(gender);
-  }
-  if (mobileDisplay) {
-    parts.push(mobileDisplay);
-  }
+  const mobileDisplay = cleanMob ? `+91 ${cleanMob}` : '';
 
   return {
     id: p.id,
     name: p.name || p.Full_Name || `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Patient',
-    uhid: p.uhid || p.UHID || null,
     tags: [{ label: 'Existing', bg: '#E1F5EE', fg: '#0F6E56' }],
-    line1: parts.join(' · ') || undefined,
+    line1: mobileDisplay || undefined,
     actions
   };
 }
