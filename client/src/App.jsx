@@ -5,12 +5,17 @@ import {
   getPmsPriorities,
   getPmsBookedAppointments,
   searchPmsPatient,
-  createPmsAppointment
+  createPmsAppointment,
+  getPmsHospitalInfo,
+  getPmsScheduleConfig
 } from './services/pmsService'
+import DateField from './components/DateField'
+import MatchCard, { patientMatchRow } from './components/MatchCard'
+import PatientDetailModal from './components/PatientDetailModal'
+import './App.css'
 
 const PRIORITIES = ['Routine', 'Urgent', 'ASAP', 'STAT']
-// Morning session 09:00 - 13:00 (540-780m), Evening session 16:30 - 20:30 (990-1230m)
-const SESSIONS = [[540, 780], [990, 1230]]
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 const iso = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -23,23 +28,163 @@ const hhmm = (m) => {
   return `${String(h).padStart(2, '0')}:${mm} ${ap}`
 }
 
+function parseTimeToMins(timeStr) {
+  if (!timeStr) return null
+  const trimmed = String(timeStr).trim().toUpperCase()
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i)
+  if (!match) return null
+  let h = parseInt(match[1], 10)
+  const m = parseInt(match[2], 10)
+  const ap = match[3]
+  if (ap === 'PM' && h < 12) h += 12
+  if (ap === 'AM' && h === 12) h = 0
+  return h * 60 + m
+}
+
+function getWorkingBlocksForDate(dateStr, businessHours, doctorShift) {
+  if (!dateStr) return []
+  const dt = new Date(`${dateStr}T12:00:00`)
+  const dayName = DAY_NAMES[dt.getDay()]
+
+  // 1. Check doctor's specific shift hours if assigned
+  if (doctorShift) {
+    const shiftDays = doctorShift.business_days || doctorShift.days || []
+    if (shiftDays.length === 0 || shiftDays.includes(dayName)) {
+      if (Array.isArray(doctorShift.daily_timing) && doctorShift.daily_timing.length >= 2) {
+        const startM = parseTimeToMins(doctorShift.daily_timing[0])
+        let endM = parseTimeToMins(doctorShift.daily_timing[1])
+        if (endM === 0 || doctorShift.daily_timing[1]?.includes('12:00 AM') || doctorShift.daily_timing[1] === '24:00') {
+          endM = 1440
+        }
+        if (startM !== null && endM !== null && endM > startM) {
+          return [[startM, endM]]
+        }
+      }
+      if (Array.isArray(doctorShift.custom_timing)) {
+        const ct = doctorShift.custom_timing.find(c => c.days === dayName || c.days?.includes(dayName))
+        const timing = ct?.daily_timing || ct?.timing || ct?.business_timing
+        if (Array.isArray(timing) && timing.length >= 2) {
+          const startM = parseTimeToMins(timing[0])
+          let endM = parseTimeToMins(timing[1])
+          if (endM === 0 || timing[1]?.includes('12:00 AM') || timing[1] === '24:00') {
+            endM = 1440
+          }
+          if (startM !== null && endM !== null && endM > startM) {
+            return [[startM, endM]]
+          }
+        }
+      }
+    } else {
+      // Doctor has assigned shift hours, but this day is an off-day
+      return []
+    }
+  }
+
+  // 2. Organization Business Hours (fallback when doctor has no shift hours assigned)
+  if (businessHours) {
+    const rawDays = businessHours.business_days || []
+    const isWorkingDay = rawDays.length === 0 || rawDays.includes(dayName)
+    if (!isWorkingDay) return []
+
+    const typeStr = String(businessHours.type || '').toLowerCase()
+    const bhValStr = String(businessHours.business_hours || '').toLowerCase()
+    if (typeStr.includes('24') || bhValStr.includes('24')) {
+      // Full 24 Hours: round-the-clock 00:00 to 24:00 (0 to 1440 minutes)
+      return [[0, 1440]]
+    }
+
+    if (businessHours.same_as_everyday && Array.isArray(businessHours.daily_timing) && businessHours.daily_timing.length >= 2) {
+      const startM = parseTimeToMins(businessHours.daily_timing[0])
+      let endM = parseTimeToMins(businessHours.daily_timing[1])
+      if (endM === 0 || businessHours.daily_timing[1]?.includes('12:00 AM') || businessHours.daily_timing[1] === '24:00') {
+        endM = 1440
+      }
+      if (startM !== null && endM !== null && endM > startM) {
+        return [[startM, endM]]
+      }
+    }
+
+    if (Array.isArray(businessHours.custom_timing)) {
+      const ct = businessHours.custom_timing.find(c => c.days === dayName || c.days?.includes(dayName))
+      const timing = ct?.business_timing || ct?.daily_timing || ct?.timing
+      if (Array.isArray(timing) && timing.length >= 2) {
+        const startM = parseTimeToMins(timing[0])
+        let endM = parseTimeToMins(timing[1])
+        if (endM === 0 || timing[1]?.includes('12:00 AM') || timing[1] === '24:00') {
+          endM = 1440
+        }
+        if (startM !== null && endM !== null && endM > startM) {
+          return [[startM, endM]]
+        }
+      }
+    }
+  }
+
+  // Default fallback for 24 hours: 00:00 to 24:00
+  return [[0, 1440]]
+}
+
+
 function getServiceIcon(serviceName = '') {
   const n = (serviceName || '').toLowerCase()
   if (n.includes('medic') || n.includes('general') || n.includes('physician') || n.includes('consult')) return 'ti-stethoscope'
-  if (n.includes('dent') || n.includes('tooth') || n.includes('teeth')) return 'ti-dental'
-  if (n.includes('cardio') || n.includes('heart')) return 'ti-heart-rate-monitor'
-  if (n.includes('derma') || n.includes('skin')) return 'ti-sparkles'
-  if (n.includes('eye') || n.includes('ophth')) return 'ti-eye'
+  if (n.includes('derma') || n.includes('skin')) return 'ti-mood-smile'
   if (n.includes('ortho') || n.includes('bone')) return 'ti-bone'
   if (n.includes('paed') || n.includes('ped') || n.includes('child')) return 'ti-baby-carriage'
+  if (n.includes('cardio') || n.includes('heart')) return 'ti-heart-rate-monitor'
+  if (n.includes('physio') || n.includes('therapy')) return 'ti-run'
+  if (n.includes('dent') || n.includes('tooth') || n.includes('teeth')) return 'ti-dental'
+  if (n.includes('eye') || n.includes('ophth')) return 'ti-eye'
   if (n.includes('neuro') || n.includes('brain')) return 'ti-brain'
   if (n.includes('gyn') || n.includes('women')) return 'ti-gender-female'
   if (n.includes('ent') || n.includes('ear') || n.includes('nose')) return 'ti-ear'
   return 'ti-stethoscope'
 }
 
+function DoctorAvatar({ doctor, isSelected, initials }) {
+  const [imgError, setImgError] = useState(false)
+  const imageSrc = doctor?.id
+    ? (doctor.image && doctor.image.startsWith('/server')
+        ? doctor.image
+        : `/server/pms_appointment_service/doctor-image?id=${doctor.id}${doctor.zuid ? `&zuid=${doctor.zuid}` : ''}`)
+    : doctor?.image
+  const hasImage = Boolean(imageSrc && !imgError)
+
+  return (
+    <span className={`doctor-avatar ${isSelected ? 'is-selected' : ''}`}>
+      {hasImage ? (
+        <img
+          src={imageSrc}
+          alt={doctor.name || initials}
+          className="doctor-avatar-img"
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <span className="doctor-avatar-initials">{initials}</span>
+      )}
+    </span>
+  )
+}
+
+function getHospitalInitials(name = '') {
+  if (!name) return 'H'
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase()
+  }
+  return name.slice(0, 2).toUpperCase()
+}
+
 export default function App() {
   // Live Data from PMS
+  const [hospitalInfo, setHospitalInfo] = useState(null)
+  const [hospitalLogoError, setHospitalLogoError] = useState(false)
+  const [scheduleConfig, setScheduleConfig] = useState({
+    businessHours: null,
+    holidays: [],
+    unavailabilities: [],
+    shiftHours: []
+  })
   const [services, setServices] = useState([])
   const [doctors, setDoctors] = useState([])
   const [priorities, setPriorities] = useState(PRIORITIES)
@@ -59,8 +204,22 @@ export default function App() {
     for (const s of services) {
       const key = (s.name || '').trim().toLowerCase()
       if (!key) continue
-      if (!map.has(key) || s.id === '42735000000260145') {
-        map.set(key, s)
+      if (!map.has(key)) {
+        map.set(key, { ...s, members: [...(s.members || [])] })
+      } else {
+        const existing = map.get(key)
+        const combinedMembers = [...(existing.members || [])]
+        for (const m of (s.members || [])) {
+          if (!combinedMembers.some((em) => String(em.id) === String(m.id))) {
+            combinedMembers.push(m)
+          }
+        }
+        map.set(key, {
+          ...existing,
+          ...s,
+          members: combinedMembers,
+          doctorCount: Math.max(combinedMembers.length, existing.doctorCount || 0, s.doctorCount || 0)
+        })
       }
     }
     return Array.from(map.values())
@@ -70,12 +229,15 @@ export default function App() {
   const [selectedDoctorId, setSelectedDoctorId] = useState(null)
   const [selectedDate, setSelectedDate] = useState(null)
   const [selectedSlot, setSelectedSlot] = useState(null)
+  const [timeFilter, setTimeFilter] = useState('all')
+  const todayKey = useMemo(() => iso(new Date()), [])
 
   // Step 3: Patient Inputs & PMS Matching
   const [first, setFirst] = useState('')
   const [last, setLast] = useState('')
   const [mobile, setMobile] = useState('')
   const [matchedPatient, setMatchedPatient] = useState(null)
+  const [detailPatient, setDetailPatient] = useState(null)
   const [searchingPatient, setSearchingPatient] = useState(false)
   const [apptName, setApptName] = useState('')
   const [apptEdited, setApptEdited] = useState(false)
@@ -89,38 +251,51 @@ export default function App() {
   const [submitError, setSubmitError] = useState('')
   const [bookingRef, setBookingRef] = useState(null)
 
-  // Load live Services and Doctors from PMS on mount
-  useEffect(() => {
-    let isMounted = true
+  // Load live Services, Doctors, and Schedule Configuration from PMS on mount or retry
+  const loadData = () => {
     setLoadingData(true)
     setFetchError('')
 
-    Promise.all([getPmsServices(), getPmsDoctors(), getPmsPriorities()])
-      .then(([srvList, docList, prioList]) => {
-        if (!isMounted) return
-        setServices(srvList)
-        setDoctors(docList)
+    Promise.all([
+      getPmsServices(),
+      getPmsDoctors(),
+      getPmsPriorities(),
+      getPmsHospitalInfo(),
+      getPmsScheduleConfig()
+    ])
+      .then(([srvList, docList, prioList, hosp, sched]) => {
+        setServices(srvList || [])
+        setDoctors(docList || [])
         if (prioList?.length) setPriorities(prioList)
+        if (hosp) setHospitalInfo(hosp)
+        if (sched) setScheduleConfig(sched)
 
-        // Select initial service if available
-        if (srvList.length > 0) {
+        if (srvList?.length > 0) {
           setSelectedServiceId(srvList[0].id)
         }
-        if (docList.length > 0) {
+        if (docList?.length > 0) {
           setSelectedDoctorId(docList[0].id)
         }
       })
       .catch((err) => {
-        if (!isMounted) return
         console.error('Failed to load PMS live data:', err)
         setFetchError(err.message || 'Unable to fetch live PMS services.')
       })
       .finally(() => {
-        if (isMounted) setLoadingData(false)
+        setLoadingData(false)
       })
+  }
 
-    return () => { isMounted = false }
+  useEffect(() => {
+    loadData()
   }, [])
+
+  // Sync document title with hospital name
+  useEffect(() => {
+    if (hospitalInfo?.name) {
+      document.title = `Book Appointment | ${hospitalInfo.name}`
+    }
+  }, [hospitalInfo?.name])
 
   // Prepopulate from URL params if provided (?first=Ganga&last=Elumalai&mobile=9876543210)
   useEffect(() => {
@@ -152,19 +327,54 @@ export default function App() {
     }
   }, [cleanMobile])
 
-  // Fetch real booked appointments for the selected date
+  // Fetch real booked appointments for the selected date and doctor
   useEffect(() => {
-    if (selectedDate) {
-      getPmsBookedAppointments(selectedDate)
+    if (selectedDate && selectedDoctorId) {
+      getPmsBookedAppointments(selectedDate, selectedDoctorId)
         .then((slots) => setBookedSlots(slots))
         .catch(() => setBookedSlots([]))
     } else {
       setBookedSlots([])
     }
-  }, [selectedDate])
+  }, [selectedDate, selectedDoctorId])
 
-  const selectedService = services.find((s) => String(s.id) === String(selectedServiceId)) || null
-  const selectedDoctor = doctors.find((d) => String(d.id) === String(selectedDoctorId)) || null
+  const selectedService = displayServices.find((s) => String(s.id) === String(selectedServiceId)) || services.find((s) => String(s.id) === String(selectedServiceId)) || null
+
+  // Filter to show only doctors associated with the selected service in PMS
+  const availableDoctors = useMemo(() => {
+    if (!selectedService) return doctors
+
+    const serviceMemberIds = new Set(
+      (selectedService.members || []).map((m) => String(m.id || m))
+    )
+    const serviceMemberNames = new Set(
+      (selectedService.members || []).map((m) => (m.name || '').trim().toLowerCase()).filter(Boolean)
+    )
+
+    if (serviceMemberIds.size === 0 && serviceMemberNames.size === 0) {
+      return doctors
+    }
+
+    const matched = doctors.filter((d) =>
+      serviceMemberIds.has(String(d.id)) ||
+      serviceMemberNames.has((d.name || '').trim().toLowerCase())
+    )
+
+    return matched.length > 0 ? matched : doctors
+  }, [selectedService, doctors])
+
+  const selectedDoctor = availableDoctors.find((d) => String(d.id) === String(selectedDoctorId)) || doctors.find((d) => String(d.id) === String(selectedDoctorId)) || null
+
+  // Ensure selectedDoctorId is always one of the available doctors for the selected service
+  useEffect(() => {
+    if (availableDoctors.length > 0) {
+      const exists = availableDoctors.some((d) => String(d.id) === String(selectedDoctorId))
+      if (!exists) {
+        setSelectedDoctorId(availableDoctors[0].id)
+        setSelectedSlot(null)
+      }
+    }
+  }, [availableDoctors, selectedDoctorId])
 
   const autoName = () => {
     const patientFullName = `${first} ${last}`.trim()
@@ -174,6 +384,17 @@ export default function App() {
 
   const effectiveApptName = apptEdited ? apptName : autoName()
 
+  const typedFullName = `${first} ${last}`.trim().toLowerCase()
+  const matchedFullName = (matchedPatient?.name || '').trim().toLowerCase()
+  const isExactOrPrefillMatch = Boolean(
+    matchedPatient && (
+      !first.trim() ||
+      !last.trim() ||
+      matchedFullName === typedFullName ||
+      (matchedFullName.includes(first.toLowerCase().trim()) && matchedFullName.includes(last.toLowerCase().trim()))
+    )
+  )
+
   const clearError = (key) => {
     if (errors[key]) {
       const next = { ...errors }
@@ -182,45 +403,190 @@ export default function App() {
     }
   }
 
-  // Generate 21-day calendar (Sundays disabled)
+  // Generate 21-day calendar based on live Business Hours, Holidays, Doctor Leave, and Elapsed Times
   const dates = useMemo(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
+    const now = new Date()
+    const nowMinutes = now.getHours() * 60 + now.getMinutes()
     const list = []
-    for (let i = 0; i < 21; i++) {
+
+    const bh = scheduleConfig.businessHours
+    const bhDays = bh?.business_days || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+    const holidayDates = new Map()
+    for (const h of (scheduleConfig.holidays || [])) {
+      const hStart = (h.date || h.start_date || h.from || '').slice(0, 10)
+      if (hStart) {
+        holidayDates.set(hStart, h.name || 'Clinic Holiday')
+      }
+    }
+
+    // Check doctor full-day leaves
+    const doctorLeaveDates = new Set()
+    if (selectedDoctorId) {
+      for (const u of (scheduleConfig.unavailabilities || [])) {
+        const uDocId = String(u.user_id?.id || u.user_id || u.user?.id || u.user || '')
+        if (uDocId && uDocId !== String(selectedDoctorId)) continue
+        const uStart = (u.from || u.start_date || '').slice(0, 10)
+        const isFull = u.all_day === true || !u.from?.includes('T') || (u.from && u.to && (new Date(u.to) - new Date(u.from) >= 23 * 3600 * 1000))
+        if (isFull && uStart) {
+          doctorLeaveDates.add(uStart)
+        }
+      }
+    }
+
+    // Find doctor shift if any
+    const docShift = (scheduleConfig.shiftHours || []).find((s) => {
+      if (Array.isArray(s.users)) {
+        return s.users.some((u) => String(u.id || u) === String(selectedDoctorId))
+      }
+      return false
+    })
+
+    // Generate dates covering at least 21 days, or extending if selectedDate is further ahead
+    let daysCount = 21
+    if (selectedDate) {
+      const selDt = new Date(selectedDate + 'T00:00:00')
+      const diffDays = Math.ceil((selDt.getTime() - today.getTime()) / 86400000)
+      if (diffDays >= 21) {
+        daysCount = Math.min(diffDays + 7, 90)
+      }
+    }
+
+    for (let i = 0; i < daysCount; i++) {
       const dt = new Date(today.getTime() + i * 86400000)
       const key = iso(dt)
-      const closed = dt.getDay() === 0
+      const dayName = DAY_NAMES[dt.getDay()]
+      const isClosedDay = !bhDays.includes(dayName)
+      const holidayName = holidayDates.get(key)
+      const isDoctorLeave = doctorLeaveDates.has(key)
+
+      // Working blocks for this specific date
+      const blocks = getWorkingBlocksForDate(key, bh, docShift)
+      const isDayOff = blocks.length === 0
+
+      // For today: check if all possible slots have already passed
+      let allSlotsPassed = false
+      if (key === todayKey) {
+        const latestSlotStart = blocks.reduce((max, [start, end]) => Math.max(max, end - 30), 0)
+        if (nowMinutes >= latestSlotStart || blocks.length === 0) {
+          allSlotsPassed = true
+        }
+      }
+
+      const disabled = isClosedDay || Boolean(holidayName) || isDoctorLeave || isDayOff || allSlotsPassed
+
+      let statusReason = ''
+      if (allSlotsPassed) statusReason = 'All slots for today have ended'
+      else if (holidayName) statusReason = `Clinic Holiday: ${holidayName}`
+      else if (isDoctorLeave) statusReason = 'Doctor on leave'
+      else if (isClosedDay || isDayOff) statusReason = `Closed on ${dayName}s`
+
       list.push({
         key,
         dow: dt.toLocaleDateString('en-IN', { weekday: 'short' }),
         day: String(dt.getDate()).padStart(2, '0'),
         mon: dt.toLocaleDateString('en-IN', { month: 'short' }),
-        disabled: closed
+        disabled,
+        isHoliday: Boolean(holidayName),
+        isOnLeave: isDoctorLeave,
+        isPast: allSlotsPassed,
+        reason: statusReason
       })
     }
     return list
-  }, [])
+  }, [scheduleConfig, selectedDoctorId, selectedDate])
 
-  // Generate time slots based on real Duration from Services__s
+  // Select the first enabled date automatically on initial load
+  useEffect(() => {
+    if (!selectedDate) {
+      const firstActive = dates.find((d) => !d.disabled)
+      if (firstActive) {
+        setSelectedDate(firstActive.key)
+      }
+    }
+  }, [dates, selectedDate])
+
+  // Generate time slots based on real Duration, Working Blocks, Doctor Unavailability, and Bookings
   const slotList = useMemo(() => {
     if (!selectedService || !selectedDoctor || !selectedDate) return []
-    const out = []
     const duration = Number(selectedService.duration) || 30
 
-    for (const [from, to] of SESSIONS) {
+    // Find doctor shift if any
+    const docShift = (scheduleConfig.shiftHours || []).find((s) => {
+      if (Array.isArray(s.users)) {
+        return s.users.some((u) => String(u.id || u) === String(selectedDoctor.id))
+      }
+      return false
+    })
+
+    const workingBlocks = getWorkingBlocksForDate(selectedDate, scheduleConfig.businessHours, docShift)
+    if (workingBlocks.length === 0) return []
+
+    // Doctor partial unavailabilities for this date
+    const partialLeaves = []
+    for (const u of (scheduleConfig.unavailabilities || [])) {
+      const uDocId = String(u.user_id?.id || u.user_id || u.user?.id || u.user || '')
+      if (uDocId && uDocId !== String(selectedDoctor.id)) continue
+      const uStartStr = u.from || u.start_date || ''
+      const uEndStr = u.to || u.end_date || ''
+      if (uStartStr.startsWith(selectedDate)) {
+        const fromM = parseTimeToMins(uStartStr.includes('T') ? uStartStr.slice(11, 16) : u.start_time)
+        const toM = parseTimeToMins(uEndStr.includes('T') ? uEndStr.slice(11, 16) : u.end_time)
+        if (fromM !== null && toM !== null && toM > fromM) {
+          partialLeaves.push([fromM, toM])
+        }
+      }
+    }
+
+    const now = new Date()
+    const todayKey = iso(now)
+    const isToday = selectedDate === todayKey
+    const nowMinutes = now.getHours() * 60 + now.getMinutes()
+
+    const out = []
+    for (const [from, to] of workingBlocks) {
       for (let m = from; m + duration <= to; m += duration) {
+        // If selected date is today, skip past times!
+        if (isToday && m <= nowMinutes) {
+          continue
+        }
+
         const label = hhmm(m)
         const isBooked = bookedSlots.includes(label)
+        const isOnLeave = partialLeaves.some(([lf, lt]) => m < lt && m + duration > lf)
+
         out.push({
           m,
           label,
-          taken: isBooked
+          taken: isBooked || isOnLeave,
+          reason: isBooked ? 'Already scheduled in PMS' : isOnLeave ? 'Doctor unavailable' : ''
         })
       }
     }
     return out
-  }, [selectedService, selectedDoctor, selectedDate, bookedSlots])
+  }, [selectedService, selectedDoctor, selectedDate, scheduleConfig, bookedSlots])
+
+  // Count and filter slots by period of day
+  const filterCounts = useMemo(() => {
+    let morning = 0, afternoon = 0, evening = 0, night = 0
+    for (const s of slotList) {
+      if (s.m >= 360 && s.m < 720) morning++
+      else if (s.m >= 720 && s.m < 1020) afternoon++
+      else if (s.m >= 1020 && s.m < 1260) evening++
+      else night++
+    }
+    return { all: slotList.length, morning, afternoon, evening, night }
+  }, [slotList])
+
+  const displaySlots = useMemo(() => {
+    if (timeFilter === 'morning') return slotList.filter((s) => s.m >= 360 && s.m < 720)
+    if (timeFilter === 'afternoon') return slotList.filter((s) => s.m >= 720 && s.m < 1020)
+    if (timeFilter === 'evening') return slotList.filter((s) => s.m >= 1020 && s.m < 1260)
+    if (timeFilter === 'night') return slotList.filter((s) => s.m >= 1260 || s.m < 360)
+    return slotList
+  }, [slotList, timeFilter])
 
   const validate = () => {
     const errs = {}
@@ -231,9 +597,9 @@ export default function App() {
       else if (!selectedSlot) errs.slot = 'Select a time slot.'
     }
     if (step === 3) {
-      if (!first.trim()) errs.first = 'Enter the patient first name.'
-      if (!last.trim()) errs.last = 'Enter the patient last name.'
-      if (cleanMobile.length !== 10) errs.mobile = 'Enter a valid 10-digit mobile number.'
+      if (!first.trim()) errs.first = 'Enter the first name.'
+      if (!last.trim()) errs.last = 'Enter the last name.'
+      if (cleanMobile.length !== 10) errs.mobile = 'Enter a 10-digit mobile number.'
       if (!complaint.trim()) errs.complaint = 'Describe the patient’s complaint.'
     }
     return errs
@@ -256,6 +622,7 @@ export default function App() {
           lastName: last.trim(),
           patientName: `${first} ${last}`.trim(),
           mobileNumber: cleanMobile,
+          matchedPatientId: isExactOrPrefillMatch ? (matchedPatient?.id || null) : null,
           doctor: selectedDoctor ? { id: selectedDoctor.id, name: selectedDoctor.name } : null,
           doctorId: selectedDoctor?.id,
           service: selectedService ? { id: selectedService.id, name: selectedService.name, duration: selectedService.duration } : null,
@@ -304,6 +671,7 @@ export default function App() {
     setLast('')
     setMobile('')
     setMatchedPatient(null)
+    setDetailPatient(null)
     setApptName('')
     setApptEdited(false)
     setComplaint('')
@@ -323,6 +691,17 @@ export default function App() {
       })
     : 'Select a date below'
 
+  const formatReviewDate = (dateStr) => {
+    if (!dateStr) return '—'
+    const dt = new Date(dateStr + 'T00:00:00')
+    const dow = dt.toLocaleDateString('en-US', { weekday: 'short' })
+    const day = dt.getDate()
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'June', 'July', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec']
+    const mon = months[dt.getMonth()] || dt.toLocaleDateString('en-US', { month: 'short' })
+    const year = dt.getFullYear()
+    return `${dow}, ${day} ${mon}, ${year}`
+  }
+
   const stepsRail = [
     { num: '1', label: 'Service', value: selectedService ? selectedService.name : 'Select from PMS' },
     { num: '2', label: 'Doctor & time', value: selectedDoctor && selectedSlot ? `${selectedDoctor.name} · ${selectedSlot}` : 'Pick doctor & slot' },
@@ -330,85 +709,130 @@ export default function App() {
     { num: '4', label: 'Confirm', value: bookingRef ? String(bookingRef) : 'Review and book' }
   ]
 
-  const summaryPairs = [
-    { k: 'Patient', v: `${first} ${last}`.trim() || '—' },
-    { k: 'Mobile', v: cleanMobile ? `+91 ${cleanMobile}` : '—' },
-    { k: 'Service (PMS)', v: selectedService ? selectedService.name : '—' },
-    { k: 'Doctor (PMS)', v: selectedDoctor ? selectedDoctor.name : '—' },
-    { k: 'Date', v: dateLabel },
-    { k: 'Time Slot', v: selectedSlot ? `${selectedSlot} (${selectedService?.duration || 30} mins)` : '—' }
+  const reviewRows = [
+    { label: 'Patient', value: `${first} ${last}`.trim() || '—' },
+    { label: 'Mobile', value: cleanMobile ? `+91 ${cleanMobile}` : '—' },
+    { label: 'Department', value: selectedService ? selectedService.name : '—' },
+    {
+      label: 'Doctor',
+      value: selectedDoctor
+        ? (selectedDoctor.name.startsWith('Dr.') ? selectedDoctor.name : `Dr. ${selectedDoctor.name}`)
+        : '—'
+    },
+    { label: 'Date', value: formatReviewDate(selectedDate) },
+    {
+      label: 'Time',
+      value: selectedSlot ? `${selectedSlot} · ${selectedService?.duration || 30} mins` : '—'
+    },
+    {
+      label: 'Appointment name',
+      value: effectiveApptName
+        ? effectiveApptName.replace(/\s+-\s+/, ' — ')
+        : (selectedService && (first || last) ? `${selectedService.name} — ${first} ${last}`.trim() : '—')
+    },
+    { label: 'Priority', value: priority || 'Routine' },
+    { label: 'Chief complaint', value: complaint.trim() || '—' },
+    { label: 'Additional info', value: extra.trim() || '—' },
+    { label: 'Follow-up to', value: 'Not a follow-up' }
   ]
-
-  const detailRows = [
-    { k: 'Appointment name', v: effectiveApptName || '—' },
-    { k: 'Priority', v: priority },
-    { k: 'Chief complaint', v: complaint || '—' },
-    { k: 'Additional info', v: extra || '—' },
-    { k: 'Target PMS Module', v: 'Appointments__s' }
-  ]
-
-  const cardStyle = (on) => ({
-    textAlign: 'left',
-    width: '100%',
-    padding: '14px 16px',
-    borderRadius: '10px',
-    cursor: 'pointer',
-    background: on ? '#f1f8fc' : '#ffffff',
-    border: `1.5px solid ${on ? '#0687ba' : '#d6e4ed'}`,
-    boxShadow: on ? '0 4px 12px rgba(6, 135, 186, 0.12)' : 'none',
-    transition: 'all 0.15s ease'
-  })
 
   return (
-    <div style={{ minHeight: '100vh', background: '#e9ebee', display: 'flex', flexDirection: 'column' }}>
-      {/* Brand Header */}
-      <header style={{ position: 'sticky', top: 0, zIndex: 20, background: '#ffffff', borderBottom: '1px solid #e3e8ef' }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 20px', height: 56, display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#0687ba', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flex: 'none' }}>
-            SH
+    <div className="app-shell">
+      {/* Brand Header (My Desk Model) */}
+      <header className="app-header">
+        <div className="app-header__inner">
+          {hospitalInfo?.image && !hospitalLogoError ? (
+            <div className="ph-avatar ph-avatar--image">
+              <img
+                src={hospitalInfo.image}
+                alt={hospitalInfo.name || 'Hospital Logo'}
+                className="ph-avatar-img"
+                onError={() => setHospitalLogoError(true)}
+              />
+            </div>
+          ) : hospitalInfo?.name ? (
+            <div className="ph-avatar">
+              {getHospitalInitials(hospitalInfo.name)}
+            </div>
+          ) : null}
+          <div className="app-header__meta">
+            {hospitalInfo?.name && (
+              <div className="ph-title">
+                {hospitalInfo.name}
+              </div>
+            )}
+            {(hospitalInfo?.address || hospitalInfo?.practiceType) && (
+              <div className="ph-subtitle" title={hospitalInfo.address || hospitalInfo.practiceType}>
+                {hospitalInfo.address || hospitalInfo.practiceType}
+              </div>
+            )}
           </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#2f4268', lineHeight: 1.25 }}>Sugah Healthcorp</div>
-            <div style={{ fontSize: 11.5, color: '#8a97af', lineHeight: 1.3 }}>PMS Live Appointment Service</div>
+          {hospitalInfo?.businessHours && (
+            <>
+              <div className="app-header__divider"></div>
+              <div className="app-header__badge-wrap">
+                <span className="avail-rec-badge" title="Organization Business Hours">
+                  <i className="ti ti-clock"></i>
+                  <span>Clinic Hours: {hospitalInfo.businessHours}</span>
+                </span>
+              </div>
+            </>
+          )}
+          {hospitalInfo?.phone && (
+            <a
+              href={`tel:${hospitalInfo.phone}`}
+              className="app-header__phone"
+              title={`Call ${hospitalInfo.phone}`}
+            >
+              <i className="ti ti-phone"></i>
+              <span className="app-header__phone-text">{hospitalInfo.phone.startsWith('+') ? hospitalInfo.phone : `+91 ${hospitalInfo.phone}`}</span>
+            </a>
+          )}
+        </div>
+
+        {/* Mobile Header Stepper: 4-Segment Progress Bar + Step Eyebrow (Image 1 design) */}
+        <div className="mobile-header-stepper">
+          <div className="mobile-progress-stepper">
+            <div
+              onClick={() => { if (step > 1) { setStep(1); setErrors({}); } }}
+              className={`mobile-progress-seg ${step > 1 ? 'is-completed is-clickable' : step === 1 ? 'is-active' : ''}`}
+              title={step > 1 ? 'Go back to Step 1' : ''}
+            ></div>
+            <div
+              onClick={() => { if (step > 2) { setStep(2); setErrors({}); } }}
+              className={`mobile-progress-seg ${step > 2 ? 'is-completed is-clickable' : step === 2 ? 'is-active' : ''}`}
+              title={step > 2 ? 'Go back to Step 2' : ''}
+            ></div>
+            <div
+              onClick={() => { if (step > 3) { setStep(3); setErrors({}); } }}
+              className={`mobile-progress-seg ${step > 3 ? 'is-completed is-clickable' : step === 3 ? 'is-active' : ''}`}
+              title={step > 3 ? 'Go back to Step 3' : ''}
+            ></div>
+            <div className={`mobile-progress-seg ${step > 4 ? 'is-completed' : step === 4 ? 'is-active' : ''}`}></div>
           </div>
-          <div style={{ width: 1, height: 22, background: '#e3e8ef', marginLeft: 6 }}></div>
-          <div style={{ fontSize: 12.5, color: '#6b7c9e', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-            <i className="ti ti-activity" style={{ fontSize: 15, color: '#1d9e75' }}></i>
-            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              Connected to PMS CRM (Services__s &amp; Appointments__s)
+          <div className="mobile-step-eyebrow">
+            <span className="mobile-step-eyebrow__badge">
+              {step === 5 ? 'CONFIRMED' : `STEP ${step} OF 4`}
+            </span>
+            <span className="mobile-step-eyebrow__topic">
+              {step === 1 ? 'Department' :
+               step === 2 ? 'Doctor, Date & Time' :
+               step === 3 ? 'Patient Details' :
+               step === 4 ? 'Review & Confirm' : 'Appointment Confirmed'}
             </span>
           </div>
-          <a
-            href="tel:+917338742750"
-            style={{
-              marginLeft: 'auto',
-              height: 30,
-              padding: '0 12px',
-              border: '1px solid #d6e4ed',
-              borderRadius: 6,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 12.5,
-              fontWeight: 500,
-              color: '#0687ba',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <i className="ti ti-phone" style={{ fontSize: 14 }}></i>+91 73387 42750
-          </a>
         </div>
       </header>
 
       {/* Main Container */}
-      <main style={{ flex: 1, width: '100%', maxWidth: 1120, margin: '0 auto', padding: '22px 20px 44px', display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+      <main className="app-main">
         
         {/* Step Navigation Sidebar */}
-        <aside style={{ flex: '1 1 230px', maxWidth: 264, position: 'sticky', top: 78 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: '#0687ba', marginBottom: 11 }}>
+        <aside className="app-sidebar">
+          <div className="app-sidebar__title">
             Book appointment
           </div>
-          <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <ol className="steps-rail">
             {stepsRail.map((st, i) => {
               const n = i + 1
               const on = step === n
@@ -418,43 +842,16 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => { if (n < step) { setStep(n); setErrors({}); } }}
-                    style={{
-                      display: 'flex',
-                      gap: 10,
-                      alignItems: 'flex-start',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '9px 11px',
-                      borderRadius: 9,
-                      cursor: n < step ? 'pointer' : 'default',
-                      font: 'inherit',
-                      border: `1px solid ${on ? '#d6e4ed' : 'transparent'}`,
-                      background: on ? '#ffffff' : 'transparent',
-                      transition: 'all 0.15s ease'
-                    }}
+                    className={`step-rail-btn ${on ? 'is-active' : ''} ${past ? 'is-past' : 'is-disabled'}`}
                   >
-                    <span
-                      style={{
-                        flex: 'none',
-                        width: 22,
-                        height: 22,
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 11,
-                        fontWeight: 600,
-                        background: past ? '#e6f6ef' : on ? '#0687ba' : '#e3e8ef',
-                        color: past ? '#1d9e75' : on ? '#ffffff' : '#8a97af'
-                      }}
-                    >
-                      {past ? <i className="ti ti-check" style={{ fontSize: 12 }}></i> : st.num}
+                    <span className={`step-rail-badge ${past ? 'is-past' : on ? 'is-active' : ''}`}>
+                      {past ? <i className="ti ti-check"></i> : st.num}
                     </span>
-                    <span style={{ display: 'block', minWidth: 0 }}>
-                      <span style={{ display: 'block', fontSize: 13.5, fontWeight: on ? 600 : 500, color: '#2f4268' }}>
+                    <span className="step-rail-info">
+                      <span className={`step-rail-label ${on ? 'is-active' : ''}`}>
                         {st.label}
                       </span>
-                      <span style={{ display: 'block', fontSize: 11.5, color: '#8a97af', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span className="step-rail-sub">
                         {st.value}
                       </span>
                     </span>
@@ -464,90 +861,88 @@ export default function App() {
             })}
           </ol>
 
-          <div style={{ marginTop: 14, padding: '12px 14px', background: '#f8fafc', border: '1px solid #edf1f5', borderRadius: 9 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#8a97af' }}>
-              PMS Live Integration
+          <div className="pms-info-card">
+            <div className="pms-info-card__title">
+             At the clinic
             </div>
-            <p style={{ margin: '6px 0 0', fontSize: 12.5, lineHeight: 1.55, color: '#54658a' }}>
-              Services are queried live from Zoho PMS <code>Services__s</code>. Bookings are registered immediately in <code>Appointments__s</code>.
+            <p className="pms-info-card__desc">
+             Appointments booked here are created in the clinic's records. Carry a photo ID and report to the front desk ten minutes early.
             </p>
           </div>
         </aside>
 
         {/* Wizard Form Card */}
-        <section
-          style={{
-            flex: '999 1 460px',
-            minWidth: 'min(100%, 320px)',
-            background: '#ffffff',
-            borderRadius: 13,
-            boxShadow: '0 8px 28px rgba(31, 45, 71, 0.10)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden'
-          }}
-        >
+        <section className="wizard-card">
           {/* Card Step Header */}
-          <div style={{ flex: 'none', padding: '15px 20px', borderBottom: '1px solid #edf1f5', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-              <div style={{ fontSize: 16.5, fontWeight: 600, color: '#2f4268' }}>
-                {step === 1 ? 'Select Service' :
-                 step === 2 ? 'Doctor and Schedule' :
+          <div className="wizard-card__header">
+            <div className="wizard-card__title-group">
+              <div className="wizard-card__title">
+                {step === 1 ? 'Book appointment' :
+                 step === 2 ? 'Doctor and time' :
                  step === 3 ? 'Patient Details' :
                  step === 4 ? 'Review and Confirm' : 'Appointment Confirmed'}
               </div>
-              <div style={{ fontSize: 12.5, color: '#8a97af', lineHeight: 1.5 }}>
-                {step === 1 ? 'Showing active clinical services fetched directly from PMS Services__s.' :
-                 step === 2 ? 'Choose the attending practitioner and available clinic consultation slot.' :
-                 step === 3 ? 'Enter patient contact information. Matches existing records in PMS Patient module.' :
-                 step === 4 ? 'Review appointment parameters before recording in Appointments__s.' :
+              <div className="wizard-card__subtitle">
+                 {step === 1 ? 'Choose the department you need. Each one sets its own consultation length.' :
+                  step === 2 ? (selectedService ? `Doctors associated with ${selectedService.name}. Slots follow clinic hours and doctor shifts.` : 'Slots follow clinic hours and the doctor’s own shift.') :
+                  step === 3 ? 'Enter patient contact information. Matches existing records in PMS Patient module.' :
+                 step === 4 ? 'Check everything below before it is written to the clinic’s records.' :
                  'Appointment has been recorded in Zoho PMS.'}
               </div>
             </div>
-            <span style={{ flex: 'none', fontSize: 11.5, fontWeight: 500, padding: '3px 9px', borderRadius: 20, background: '#edece8', color: '#2f4268', whiteSpace: 'nowrap' }}>
+            <span className="dsk-chip dsk-chip--brand">
               {step === 5 ? 'Confirmed' : `Step ${step} of 4`}
             </span>
           </div>
 
           {/* Card Body */}
-          <div style={{ padding: '18px 20px 22px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div className="wizard-card__body">
             
             {/* STEP 1: Live Services from Services__s */}
             {step === 1 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: '#0687ba', whiteSpace: 'nowrap' }}>
-                    Available Services (from PMS Services__s)
+              <div className="step-flow">
+                <div className="section-divider">
+                  <span className="section-divider__label">
+                   Department
                   </span>
-                  <span style={{ height: 1, flex: 1, background: '#edf1f5' }}></span>
+                  <span className="section-divider__line"></span>
                 </div>
 
                 {loadingData && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 20px', background: '#f8fafc', borderRadius: 8, border: '1px solid #edf1f5', color: '#54658a' }}>
-                    <i className="ti ti-loader" style={{ fontSize: 18 }}></i>
-                    <span style={{ fontSize: 13 }}>Fetching live services from PMS...</span>
+                  <div className="loading-banner">
+                    <i className="ti ti-loader"></i>
+                    <span>Fetching live services from PMS...</span>
                   </div>
                 )}
 
                 {fetchError && (
-                  <div style={{ padding: '10px 14px', background: '#fff5f5', border: '1px solid #fed7d7', borderRadius: 8, color: '#c53030', fontSize: 12.5 }}>
+                  <div className="error-banner">
                     {fetchError}
                   </div>
                 )}
 
-                {errors.service && <div style={{ fontSize: 11.5, color: '#a32d2d' }}>{errors.service}</div>}
+                {errors.service && <div className="section-error">{errors.service}</div>}
 
                 {!loadingData && displayServices.length === 0 && (
-                  <div style={{ padding: '24px 20px', textAlign: 'center', background: '#f8fafc', borderRadius: 8, border: '1px solid #edf1f5', color: '#6b7c9e', fontSize: 13 }}>
-                    No services found in PMS Services__s module.
+                  <div className="empty-banner">
+                    <div className="step-rail-label">No live services loaded from PMS Services__s.</div>
+                    <button
+                      type="button"
+                      onClick={loadData}
+                      className="btn-primary"
+                    >
+                      <i className="ti ti-refresh"></i>
+                      Retry Loading Live PMS Data
+                    </button>
                   </div>
                 )}
 
                 {!loadingData && displayServices.length > 0 && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '14px 16px' }}>
+                  <div className="cards-grid">
                     {displayServices.map((s) => {
                       const on = String(s.id) === String(selectedServiceId)
                       const icon = getServiceIcon(s.name)
+                      const docCount = s.doctorCount ?? (Array.isArray(s.members) ? s.members.length : 0)
                       return (
                         <button
                           key={s.id}
@@ -557,44 +952,38 @@ export default function App() {
                             setSelectedSlot(null)
                             clearError('service')
                           }}
-                          style={cardStyle(on)}
+                          className={`select-card ${on ? 'is-selected' : ''}`}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <span
-                              style={{
-                                flex: 'none',
-                                width: 34,
-                                height: 34,
-                                borderRadius: 8,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                background: on ? '#0687ba' : '#e6f3f9',
-                                color: on ? '#ffffff' : '#056a91'
-                              }}
-                            >
-                              <i className={`ti ${icon}`} style={{ fontSize: 18 }}></i>
+                          <div className="service-card__top">
+                            <span className={`service-card__icon ${on ? 'is-selected' : ''}`}>
+                              <i className={`ti ${icon}`}></i>
                             </span>
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: 14, fontWeight: 600, color: '#2f4268', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <div className="service-card__info">
+                              <div className="service-card__title">
                                 {s.name}
                               </div>
-                              <div style={{ fontSize: 11.5, color: '#8a97af' }}>
-                                PMS ID: {s.id.slice(-6)}
+                              <div className="service-card__meta-line">
+                                <span>{s.duration} min</span>
+                                <span className="service-card__meta-dot">•</span>
+                                <span>{docCount} {docCount === 1 ? 'doctor' : 'doctors'}</span>
                               </div>
                             </div>
-                            <span style={{ fontSize: 11.5, fontWeight: 600, color: '#0687ba', background: '#e6f3f9', padding: '2px 7px', borderRadius: 12, whiteSpace: 'nowrap' }}>
+                            <span className="service-card__badge desktop-only">
                               {s.duration} min
                             </span>
+                            <i className="ti ti-chevron-right select-card__chevron"></i>
                           </div>
 
-                          <div style={{ marginTop: 10, fontSize: 12.5, color: '#54658a', lineHeight: 1.5 }}>
-                            {s.description || 'Clinical consultation, diagnosis, and prescription management.'}
+                          <div className="service-card__desc desktop-only">
+                            {s.description || 'Fever, infections, blood pressure and diabetes review.'}
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingTop: 8, borderTop: '1px solid #edf1f5', fontSize: 11.5, color: '#8a97af' }}>
-                            <span>Status: <strong style={{ color: '#1d9e75' }}>{s.status || 'Available'}</strong></span>
-                            <span>{s.price > 0 ? `Fee: ₹${s.price}` : 'Consultation'}</span>
+                          <div className="service-card__footer desktop-only">
+                            <span className="service-card__doc-count">
+                              <strong className="service-card__status">
+                                {docCount > 0 ? `${docCount} ${docCount === 1 ? 'Doctor Available' : 'Doctors Available'}` : 'Doctors Available'}
+                              </strong>
+                            </span>
                           </div>
                         </button>
                       )
@@ -606,19 +995,19 @@ export default function App() {
 
             {/* STEP 2: Doctor and Schedule */}
             {step === 2 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div className="step-flow--lg">
                 {/* Doctor Selection from PMS Users */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: '#0687ba', whiteSpace: 'nowrap' }}>
-                      Attending Practitioner (from PMS)
+                <div className="step-flow">
+                  <div className="section-divider">
+                    <span className="section-divider__label">
+                      {selectedService ? `Doctors for ${selectedService.name}` : 'Doctor'}
                     </span>
-                    <span style={{ height: 1, flex: 1, background: '#edf1f5' }}></span>
-                    {errors.doctor && <span style={{ fontSize: 11.5, color: '#a32d2d' }}>{errors.doctor}</span>}
+                    <span className="section-divider__line"></span>
+                    {errors.doctor && <span className="section-error push-right">{errors.doctor}</span>}
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(252px, 1fr))', gap: '14px 16px' }}>
-                    {doctors.map((d) => {
+                  <div className="doctors-grid">
+                    {availableDoctors.map((d) => {
                       const on = String(d.id) === String(selectedDoctorId)
                       const initials = (d.name || 'DR').replace(/^Dr\.\s*/i, '').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()
                       return (
@@ -630,35 +1019,24 @@ export default function App() {
                             setSelectedSlot(null)
                             clearError('doctor')
                           }}
-                          style={cardStyle(on)}
+                          className={`select-card ${on ? 'is-selected' : ''}`}
                         >
-                          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minWidth: 0 }}>
-                            <span
-                              style={{
-                                flex: 'none',
-                                width: 32,
-                                height: 32,
-                                borderRadius: '50%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: 12,
-                                fontWeight: 700,
-                                background: on ? '#0687ba' : '#e6f3f9',
-                                color: on ? '#ffffff' : '#056a91'
-                              }}
-                            >
-                              {initials}
-                            </span>
-                            <div style={{ minWidth: 0, display: 'block' }}>
-                              <div style={{ fontSize: 13.5, fontWeight: 600, color: '#2f4268' }}>{d.name}</div>
-                              <div style={{ fontSize: 11.5, color: '#8a97af', lineHeight: 1.4 }}>{d.role || 'Consultant Specialist'}</div>
+                          <div className="doctor-card__row">
+                            <DoctorAvatar doctor={d} isSelected={on} initials={initials} />
+                            <div className="doctor-card__info">
+                              <div className="doctor-name" title={d.name}>{d.name}</div>
+                              {d.medicalDegrees && (
+                                <div className="doctor-degrees" title={d.medicalDegrees}>{d.medicalDegrees}</div>
+                              )}
+                              <div className="doctor-role" title={d.role || 'Consultant Specialist'}>{d.role || 'Consultant Specialist'}</div>
                               {d.email && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontSize: 11, color: '#8a97af' }}>
-                                  <i className="ti ti-mail" style={{ fontSize: 12 }}></i>{d.email}
+                                <div className="doctor-email desktop-only" title={d.email}>
+                                  <i className="ti ti-mail"></i>
+                                  <span className="doctor-email__text">{d.email}</span>
                                 </div>
                               )}
                             </div>
+                            <i className="ti ti-chevron-right select-card__chevron"></i>
                           </div>
                         </button>
                       )
@@ -667,44 +1045,56 @@ export default function App() {
                 </div>
 
                 {/* Schedule & Slot Picker */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: '#0687ba', whiteSpace: 'nowrap' }}>
+                <div className="step-flow">
+                  <div className="section-divider">
+                    <span className="section-divider__label">
                       Schedule &amp; Slots
                     </span>
-                    <span style={{ height: 1, flex: 1, background: '#edf1f5' }}></span>
+                    <span className="section-divider__line"></span>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px 16px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 500, color: '#54658a' }}>
-                        Appointment date <span style={{ color: '#e24b4a' }}>*</span>
-                      </span>
-                      <span style={{ height: 34, padding: '0 10px', border: '1px solid #d6e4ed', borderRadius: 7, background: '#f4f9fc', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: '#2f4268' }}>
-                        <i className="ti ti-calendar" style={{ fontSize: 15, color: '#8a97af' }}></i>{dateLabel}
-                      </span>
-                      <span style={{ fontSize: 11.5, color: '#8a97af' }}>Clinic closed on Sundays</span>
+                  <div className="schedule-params-grid">
+                    <div className="form-group">
+                      <label className="form-label">
+                        Appointment date <span className="form-required">*</span>
+                      </label>
+                      <DateField
+                        value={selectedDate ? new Date(`${selectedDate}T00:00:00`) : null}
+                        minDate={new Date()}
+                        onChange={(d) => {
+                          const pad = (n) => String(n).padStart(2, '0')
+                          setSelectedDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`)
+                          setSelectedSlot(null)
+                          clearError('slot')
+                        }}
+                        error={!!errors.slot && !selectedDate}
+                      />
+                      <span className="form-hint">Choose a date or pick below</span>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 500, color: '#54658a' }}>Duration (from Services__s)</span>
-                      <span style={{ height: 34, padding: '0 10px', border: '1px solid #d6e4ed', borderRadius: 7, background: '#f1f4f8', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: '#54658a' }}>
+                    <div className="form-group">
+                      <span className="form-label">Duration</span>
+                      <span className="form-control form-control--readonly">
                         {selectedService ? `${selectedService.duration} mins` : '30 mins'}
-                        <i className="ti ti-lock" style={{ fontSize: 14, color: '#8a97af', marginLeft: 'auto' }}></i>
+                        <i className="ti ti-lock icon-right"></i>
                       </span>
-                      <span style={{ fontSize: 11.5, color: '#8a97af' }}>Set on PMS Service record</span>
+                      <span className="form-hint">From the service record</span>
                     </div>
                   </div>
 
                   {/* 21-day Date Buttons */}
-                  <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 4 }}>
+                  <div className="date-strip">
                     {dates.map((dt) => {
                       const on = dt.key === selectedDate
+                      const holidayClass = dt.isHoliday ? 'is-holiday' : ''
+                      const leaveClass = dt.isOnLeave ? 'is-on-leave' : ''
+                      const pastClass = dt.isPast ? 'is-past' : ''
                       return (
                         <button
                           key={dt.key}
                           type="button"
                           disabled={dt.disabled}
+                          title={dt.reason || (dt.disabled ? 'Unavailable' : dt.dow)}
                           onClick={() => {
                             if (!dt.disabled) {
                               setSelectedDate(dt.key)
@@ -712,79 +1102,124 @@ export default function App() {
                               clearError('slot')
                             }
                           }}
-                          style={{
-                            flex: 'none',
-                            width: 58,
-                            padding: '6px 0',
-                            textAlign: 'center',
-                            borderRadius: 7,
-                            font: 'inherit',
-                            cursor: dt.disabled ? 'not-allowed' : 'pointer',
-                            background: on ? '#0687ba' : dt.disabled ? '#f1f4f8' : '#ffffff',
-                            color: on ? '#ffffff' : dt.disabled ? '#a6b2c6' : '#2f4268',
-                            border: `1px solid ${on ? '#0687ba' : '#d6e4ed'}`,
-                            transition: 'all 0.15s ease'
-                          }}
+                          className={`date-btn ${on ? 'is-selected' : ''} ${holidayClass} ${leaveClass} ${pastClass}`}
                         >
-                          <span style={{ display: 'block', fontSize: 10.5, textTransform: 'uppercase', opacity: 0.75 }}>{dt.dow}</span>
-                          <span style={{ display: 'block', fontSize: 15, fontWeight: 600, lineHeight: 1.35 }}>{dt.day}</span>
-                          <span style={{ display: 'block', fontSize: 10.5, opacity: 0.75 }}>{dt.mon}</span>
+                          <span className="date-btn__dow">{dt.dow}</span>
+                          <span className="date-btn__day">{dt.day}</span>
+                          <span className="date-btn__mon">{dt.mon}</span>
                         </button>
                       )
                     })}
                   </div>
 
                   {/* Available Time Slots */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 500, color: '#54658a' }}>
-                      Available time slots <span style={{ color: '#e24b4a' }}>*</span>
-                      {errors.slot && <span style={{ marginLeft: 'auto', fontSize: 11.5, color: '#a32d2d' }}>{errors.slot}</span>}
+                  <div className="form-group">
+                    <span className="form-label">
+                      Available time slots <span className="form-required">*</span>
+                      {errors.slot && <span className="section-error push-right">{errors.slot}</span>}
                     </span>
 
-                    {slotList.length > 0 ? (
-                      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                        {slotList.map((s) => {
-                          const on = selectedSlot === s.label
-                          return (
-                            <button
-                              key={s.label}
-                              type="button"
-                              disabled={s.taken}
-                              onClick={() => {
-                                if (!s.taken) {
-                                  setSelectedSlot(s.label)
-                                  clearError('slot')
-                                }
-                              }}
-                              style={{
-                                height: 31,
-                                padding: '0 11px',
-                                borderRadius: 7,
-                                font: 'inherit',
-                                fontSize: 12.5,
-                                whiteSpace: 'nowrap',
-                                cursor: s.taken ? 'not-allowed' : 'pointer',
-                                background: on ? '#0687ba' : s.taken ? '#f1f4f8' : '#f4f9fc',
-                                color: on ? '#ffffff' : s.taken ? '#a6b2c6' : '#2f4268',
-                                border: `1px solid ${on ? '#0687ba' : '#d6e4ed'}`,
-                                textDecoration: s.taken ? 'line-through' : 'none',
-                                transition: 'all 0.15s ease'
-                              }}
-                            >
-                              {s.label}
-                            </button>
-                          )
-                        })}
+                    {/* Time of Day Period Filter Tabs for 24-Hour Slots */}
+                    {slotList.length > 0 && (
+                      <div className="slot-filter-tabs">
+                        <button
+                          type="button"
+                          onClick={() => setTimeFilter('all')}
+                          className={`slot-filter-btn ${timeFilter === 'all' ? 'is-active' : ''}`}
+                        >
+                          All ({filterCounts.all})
+                        </button>
+                        {filterCounts.morning > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setTimeFilter('morning')}
+                            className={`slot-filter-btn ${timeFilter === 'morning' ? 'is-active' : ''}`}
+                          >
+                            Morning ({filterCounts.morning})
+                          </button>
+                        )}
+                        {filterCounts.afternoon > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setTimeFilter('afternoon')}
+                            className={`slot-filter-btn ${timeFilter === 'afternoon' ? 'is-active' : ''}`}
+                          >
+                            Afternoon ({filterCounts.afternoon})
+                          </button>
+                        )}
+                        {filterCounts.evening > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setTimeFilter('evening')}
+                            className={`slot-filter-btn ${timeFilter === 'evening' ? 'is-active' : ''}`}
+                          >
+                            Evening ({filterCounts.evening})
+                          </button>
+                        )}
+                        {filterCounts.night > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setTimeFilter('night')}
+                            className={`slot-filter-btn ${timeFilter === 'night' ? 'is-active' : ''}`}
+                          >
+                            Night ({filterCounts.night})
+                          </button>
+                        )}
                       </div>
+                    )}
+
+                    {slotList.length > 0 ? (
+                      displaySlots.length > 0 ? (
+                        <div className="slots-grid">
+                          {displaySlots.map((s) => {
+                            const on = selectedSlot === s.label
+                            return (
+                              <button
+                                key={s.label}
+                                type="button"
+                                disabled={s.taken}
+                                title={s.reason || undefined}
+                                onClick={() => {
+                                  if (!s.taken) {
+                                    setSelectedSlot(s.label)
+                                    clearError('slot')
+                                  }
+                                }}
+                                className={`slot-btn ${on ? 'is-selected' : ''} ${s.taken ? 'is-taken' : ''}`}
+                              >
+                                {s.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <div className="info-banner">
+                          <i className="ti ti-info-circle"></i>
+                          <span>No slots available in this time window. Select "All" above to see all slots.</span>
+                        </div>
+                      )
                     ) : (
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '10px 13px', border: '1px solid #c4dcf7', borderRadius: 8, background: '#eef4fd', color: '#1a5aa8' }}>
-                        <i className="ti ti-info-circle" style={{ fontSize: 16, flex: 'none', marginTop: 1 }}></i>
-                        <span style={{ fontSize: 12.5, lineHeight: 1.55 }}>
-                          {!selectedDate ? 'Select a date above to display available consultation slots.' : 'No slots remain on this date. Please select another day.'}
+                      <div className="info-banner">
+                        <i className="ti ti-info-circle"></i>
+                        <span>
+                          {!selectedDate
+                            ? 'Select a date above to display available consultation slots.'
+                            : selectedDate === iso(new Date())
+                            ? 'All consultation slots for today have ended. Please select an upcoming date.'
+                            : 'No slots remain on this date. Please select another day.'}
                         </span>
                       </div>
                     )}
-                    <span style={{ fontSize: 11.5, color: '#8a97af' }}>Times already scheduled in PMS Appointments__s are struck-through.</span>
+
+                    {/* <div className="schedule-hint-row">
+                      <span className="form-hint">
+                        {scheduleConfig.businessHours?.type === '24_by_7' || String(scheduleConfig.businessHours?.business_hours).includes('24')
+                          ? 'Clinic open 24 Hours (Mon – Sun) · 24/7 round-the-clock consultation slots'
+                          : hospitalInfo?.businessHours
+                          ? `Clinic Hours: ${hospitalInfo.businessHours}`
+                          : 'Consultation slots follow clinic hours and doctor shift schedule.'}
+                      </span>
+                    </div> */}
                   </div>
                 </div>
               </div>
@@ -792,163 +1227,172 @@ export default function App() {
 
             {/* STEP 3: Patient Details & Match */}
             {step === 3 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div className="step-flow--lg">
                 {/* Patient Information */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: '#0687ba', whiteSpace: 'nowrap' }}>
+                <div className="step-flow">
+                  <div className="section-divider">
+                    <span className="section-divider__label">
                       Patient Information
                     </span>
-                    <span style={{ height: 1, flex: 1, background: '#edf1f5' }}></span>
+                    <span className="section-divider__line"></span>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px 16px' }}>
-                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 500, color: '#54658a' }}>
-                        First name <span style={{ color: '#e24b4a' }}>*</span>
+                  <div className="form-grid-3">
+                    <label className="form-group">
+                      <span className="form-label">
+                        First name <span className="form-required">*</span>
                       </span>
-                      <span style={{ height: 34, padding: '0 10px', border: '1px solid #d6e4ed', borderRadius: 7, background: '#f4f9fc', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="form-control">
                         <input
                           type="text"
                           value={first}
                           onChange={(e) => { setFirst(e.target.value); clearError('first'); }}
                           placeholder="First name"
-                          style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontSize: 13.5, height: '100%', padding: 0 }}
                         />
                       </span>
-                      {errors.first && <span style={{ fontSize: 11.5, color: '#a32d2d' }}>{errors.first}</span>}
+                      {errors.first && <span className="section-error">{errors.first}</span>}
                     </label>
 
-                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 500, color: '#54658a' }}>
-                        Last name <span style={{ color: '#e24b4a' }}>*</span>
-                      </span>
-                      <span style={{ height: 34, padding: '0 10px', border: '1px solid #d6e4ed', borderRadius: 7, background: '#f4f9fc', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label className="form-group">
+                      <span className="form-label"> Last name <span className="form-required">*</span></span>
+                      <span className="form-control">
                         <input
                           type="text"
                           value={last}
                           onChange={(e) => { setLast(e.target.value); clearError('last'); }}
                           placeholder="Last name"
-                          style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontSize: 13.5, height: '100%', padding: 0 }}
                         />
                       </span>
-                      {errors.last && <span style={{ fontSize: 11.5, color: '#a32d2d' }}>{errors.last}</span>}
+                      {errors.last && <span className="section-error">{errors.last}</span>}
                     </label>
 
-                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 500, color: '#54658a' }}>
-                        Mobile number <span style={{ color: '#e24b4a' }}>*</span>
+                    <label className="form-group">
+                      <span className="form-label">
+                        Mobile number <span className="form-required">*</span>
                       </span>
-                      <span style={{ height: 34, padding: '0 10px', border: '1px solid #d6e4ed', borderRadius: 7, background: '#f4f9fc', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ flex: 'none', fontSize: 13, color: '#8a97af', display: 'flex', alignItems: 'center', gap: 7 }}>
-                          +91<span style={{ width: 1, height: 16, background: '#e3e8ef' }}></span>
+                      <span className="form-control">
+                        <span className="phone-prefix">
+                          +91<span className="phone-prefix__divider"></span>
                         </span>
                         <input
                           type="tel"
                           value={mobile}
                           onChange={(e) => { setMobile(e.target.value.replace(/\D/g, '').slice(0, 10)); clearError('mobile'); }}
                           placeholder="10-digit mobile"
-                          style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontSize: 13.5, height: '100%', padding: 0 }}
                         />
-                        {searchingPatient && <i className="ti ti-loader" style={{ fontSize: 15, color: '#0687ba' }}></i>}
+                        {searchingPatient && <i className="ti ti-loader icon-loader"></i>}
                         {cleanMobile.length === 10 && !searchingPatient && (
-                          <i className="ti ti-circle-check" style={{ fontSize: 15, color: '#1d9e75' }}></i>
+                          <i className="ti ti-circle-check icon-check"></i>
                         )}
                       </span>
-                      {errors.mobile && <span style={{ fontSize: 11.5, color: '#a32d2d' }}>{errors.mobile}</span>}
+                      {errors.mobile && <span className="section-error">{errors.mobile}</span>}
                     </label>
                   </div>
 
-                  <span style={{ fontSize: 11.5, color: '#8a97af' }}>
-                    Searches existing records in PMS Patient module. If new, registers a prospect profile automatically.
-                  </span>
-
-                  {matchedPatient && (
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '10px 13px', border: '1px solid #c4dcf7', borderRadius: 8, background: '#eef4fd', color: '#1a5aa8' }}>
-                      <i className="ti ti-user-check" style={{ fontSize: 16, flex: 'none', marginTop: 1 }}></i>
-                      <span style={{ fontSize: 12.5, lineHeight: 1.55 }}>
-                        <strong style={{ fontWeight: 600 }}>Matched Patient in PMS — {matchedPatient.name}</strong> (ID: {matchedPatient.id})<br />
-                        This appointment will link to this existing Patient record in PMS.
-                      </span>
-                    </div>
+                  {matchedPatient && !searchingPatient && (
+                    isExactOrPrefillMatch ? (
+                      <MatchCard
+                        variant="found"
+                        lead="Existing patient found — this appointment will be booked under their record, so history and balance stay in one place."
+                        matches={[
+                          patientMatchRow(matchedPatient, [
+                            {
+                              label: 'View full record',
+                              icon: 'ti-external-link',
+                              onClick: () => setDetailPatient(matchedPatient)
+                            }
+                          ])
+                        ]}
+                        foot="Name and mobile number both match this record, so the appointment is booked under it. To book someone else, change the name or the number."
+                      />
+                    ) : (
+                      <MatchCard
+                        variant="multi"
+                        lead="A patient is registered on this mobile number — pick one, or keep the typed name to book a new patient on the same number."
+                        matches={[
+                          patientMatchRow(matchedPatient, [
+                            {
+                              label: 'Use this patient',
+                              icon: 'ti-user-check',
+                              primary: true,
+                              onClick: () => {
+                                const parts = String(matchedPatient.name || '').trim().split(/\s+/)
+                                setFirst(matchedPatient.firstName || parts[0] || '')
+                                setLast(matchedPatient.lastName || parts.slice(1).join(' ') || '')
+                              }
+                            },
+                            {
+                              label: 'View full record',
+                              icon: 'ti-external-link',
+                              onClick: () => setDetailPatient(matchedPatient)
+                            }
+                          ])
+                        ]}
+                        foot="A shared family phone is normal — the name you type is matched against the patient you pick."
+                      />
+                    )
                   )}
                 </div>
 
                 {/* Appointment Metadata */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: '#0687ba', whiteSpace: 'nowrap' }}>
+                <div className="step-flow">
+                  <div className="section-divider">
+                    <span className="section-divider__label">
                       Appointment Details
                     </span>
-                    <span style={{ height: 1, flex: 1, background: '#edf1f5' }}></span>
+                    <span className="section-divider__line"></span>
                   </div>
 
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 500, color: '#54658a' }}>Appointment name</span>
-                    <span style={{ height: 34, padding: '0 10px', border: '1px solid #d6e4ed', borderRadius: 7, background: '#f4f9fc', display: 'flex', alignItems: 'center' }}>
+                  <label className="form-group">
+                    <span className="form-label">Appointment name</span>
+                    <span className="form-control">
                       <input
                         type="text"
                         value={effectiveApptName}
                         onChange={(e) => { setApptName(e.target.value); setApptEdited(true); }}
-                        style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', fontSize: 13.5, height: '100%', padding: 0 }}
                       />
                     </span>
-                    <span style={{ fontSize: 11.5, color: '#8a97af' }}>Formatted as required by PMS Appointments__s.</span>
                   </label>
 
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 500, color: '#54658a' }}>
-                      Chief complaint <span style={{ color: '#e24b4a' }}>*</span>
+                  <label className="form-group">
+                    <span className="form-label">
+                      Chief complaint <span className="form-required">*</span>
                     </span>
-                    <span style={{ border: '1px solid #d6e4ed', borderRadius: 7, background: '#f4f9fc', display: 'flex', flexDirection: 'column' }}>
+                    <span className="form-control-textarea">
                       <textarea
                         rows={3}
                         value={complaint}
                         onChange={(e) => { setComplaint(e.target.value); clearError('complaint'); }}
                         placeholder="Describe the clinical symptoms or reason for visit"
-                        style={{ minHeight: 66, resize: 'vertical', border: 'none', background: 'transparent', padding: '9px 11px', fontSize: 13.5, lineHeight: 1.55 }}
                       />
                     </span>
-                    {errors.complaint && <span style={{ fontSize: 11.5, color: '#a32d2d' }}>{errors.complaint}</span>}
+                    {errors.complaint && <span className="section-error">{errors.complaint}</span>}
                   </label>
 
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 500, color: '#54658a' }}>Additional information</span>
-                    <span style={{ border: '1px solid #d6e4ed', borderRadius: 7, background: '#f4f9fc', display: 'flex', flexDirection: 'column' }}>
+                  <label className="form-group">
+                    <span className="form-label">Additional information</span>
+                    <span className="form-control-textarea">
                       <textarea
                         rows={2}
                         value={extra}
                         onChange={(e) => setExtra(e.target.value)}
                         placeholder="Prior treatments, allergies, or notes for the doctor"
-                        style={{ minHeight: 56, resize: 'vertical', border: 'none', background: 'transparent', padding: '9px 11px', fontSize: 13.5, lineHeight: 1.55 }}
                       />
                     </span>
                   </label>
 
                   {/* Priority Selector */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 500, color: '#54658a' }}>Priority (PMS Picklist)</span>
-                    <div style={{ display: 'inline-flex', border: '1px solid #d6e4ed', borderRadius: 7, overflow: 'hidden', width: 'fit-content' }}>
-                      {priorities.map((p, i) => {
+                  <div className="form-group">
+                    <span className="form-label">Priority</span>
+                    <div className="priority-group">
+                      {priorities.map((p) => {
                         const on = priority === p
                         return (
                           <button
                             key={p}
                             type="button"
                             onClick={() => setPriority(p)}
-                            style={{
-                              height: 32,
-                              padding: '0 15px',
-                              border: 'none',
-                              borderLeft: i === 0 ? 'none' : '1px solid #d6e4ed',
-                              font: 'inherit',
-                              fontSize: 12.5,
-                              cursor: 'pointer',
-                              background: on ? '#0687ba' : '#ffffff',
-                              color: on ? '#ffffff' : '#2f4268',
-                              fontWeight: on ? 600 : 400,
-                              transition: 'all 0.15s ease'
-                            }}
+                            className={`priority-btn ${on ? 'is-active' : ''}`}
                           >
                             {p}
                           </button>
@@ -962,98 +1406,57 @@ export default function App() {
 
             {/* STEP 4: Review and Confirm */}
             {step === 4 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div className="step-flow">
                 {submitError && (
-                  <div style={{ padding: '10px 14px', background: '#fff5f5', border: '1px solid #fed7d7', borderRadius: 8, color: '#c53030', fontSize: 12.5 }}>
+                  <div className="error-banner">
                     {submitError}
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '11px 16px', padding: '12px 14px', background: '#f8fafc', border: '1px solid #edf1f5', borderRadius: 9 }}>
-                  {summaryPairs.map((p) => (
-                    <div key={p.k} style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#8a97af', textTransform: 'uppercase', letterSpacing: '.06em' }}>
-                        {p.k}
-                      </span>
-                      <span style={{ fontSize: 13.5, color: '#2f4268', lineHeight: 1.45, overflowWrap: 'anywhere' }}>
-                        {p.v}
-                      </span>
+                <div className="review-card-table">
+                  {reviewRows.map((r) => (
+                    <div key={r.label} className="review-row">
+                      <span className="review-label">{r.label}</span>
+                      <span className="review-value">{r.value}</span>
                     </div>
                   ))}
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: '#0687ba', whiteSpace: 'nowrap' }}>
-                      PMS Record Details
-                    </span>
-                    <span style={{ height: 1, flex: 1, background: '#edf1f5' }}></span>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {detailRows.map((r) => (
-                      <div key={r.k} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 168px) minmax(0, 1fr)', gap: 14, padding: '9px 0', borderBottom: '1px solid #edf1f5' }}>
-                        <span style={{ fontSize: 12.5, color: '#8a97af' }}>{r.k}</span>
-                        <span style={{ fontSize: 13.5, color: '#2f4268', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{r.v}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '10px 13px', border: '1px solid #c4dcf7', borderRadius: 8, background: '#eef4fd', color: '#1a5aa8' }}>
-                  <i className="ti ti-info-circle" style={{ fontSize: 16, flex: 'none', marginTop: 1 }}></i>
-                  <span style={{ fontSize: 12.5, lineHeight: 1.55 }}>
-                    Clicking "Book appointment" will execute <code>POST /v3/Appointments__s</code> on PMS and generate a live record.
-                  </span>
                 </div>
               </div>
             )}
 
             {/* STEP 5: Appointment Confirmed */}
             {step === 5 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 560 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <span style={{ flex: 'none', width: 42, height: 42, borderRadius: '50%', background: '#e6f6ef', color: '#1d9e75', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <i className="ti ti-check" style={{ fontSize: 21 }}></i>
+              <div className="confirmation-wrap">
+                <div className="confirmation-header">
+                  <span className="confirmation-icon">
+                    <i className="ti ti-check"></i>
                   </span>
-                  <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <span style={{ fontSize: 16.5, fontWeight: 600, color: '#2f4268' }}>Appointment confirmed</span>
-                    <span style={{ fontSize: 12.5, color: '#8a97af' }}>
+                  <span className="wizard-card__title-group">
+                    <span className="wizard-card__title">Appointment confirmed</span>
+                    <span className="confirmation-header__subtitle">
                       {selectedService?.name} · {selectedDoctor?.name} · {dateLabel} at {selectedSlot}
                     </span>
                   </span>
                 </div>
 
-                <div style={{ padding: '12px 14px', background: '#f8fafc', border: '1px solid #edf1f5', borderRadius: 9 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#8a97af', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                <div className="confirmation-badge-box">
+                  <div className="summary-item__label">
                     PMS Appointment ID
                   </div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: '#0687ba', marginTop: 3 }}>{bookingRef}</div>
+                  <div className="confirmation-ref">{bookingRef}</div>
                 </div>
 
-                <p style={{ margin: 0, fontSize: 12.5, color: '#54658a', lineHeight: 1.6 }}>
-                  Appointment has been successfully saved in Zoho PMS <code>Appointments__s</code> for +91 {cleanMobile}.
+                <p className="pms-info-card__desc">
+                  Your appointment has been successfully confirmed and recorded for +91 {cleanMobile}.
                 </p>
 
                 <div>
                   <button
                     type="button"
                     onClick={handleRestart}
-                    style={{
-                      height: 34,
-                      padding: '0 16px',
-                      border: '1px solid #d6e4ed',
-                      borderRadius: 8,
-                      background: '#ffffff',
-                      fontSize: 13,
-                      color: '#2f4268',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      cursor: 'pointer'
-                    }}
+                    className="btn-secondary"
                   >
-                    <i className="ti ti-plus" style={{ fontSize: 15 }}></i>Book another appointment
+                    <i className="ti ti-plus"></i>Book another appointment
                   </button>
                 </div>
               </div>
@@ -1063,58 +1466,39 @@ export default function App() {
 
           {/* Card Footer Navigation */}
           {step <= 4 && (
-            <div style={{ flex: 'none', padding: '13px 20px', borderTop: '1px solid #edf1f5', background: '#fcfdfe', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={handleBack}
-                style={{
-                  height: 34,
-                  padding: '0 16px',
-                  border: '1px solid #d6e4ed',
-                  borderRadius: 8,
-                  background: '#ffffff',
-                  fontSize: 13,
-                  color: '#2f4268',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  cursor: 'pointer',
-                  visibility: step === 1 ? 'hidden' : 'visible'
-                }}
-              >
-                <i className="ti ti-chevron-left" style={{ fontSize: 15 }}></i>Back
-              </button>
+            <div className="wizard-footer">
+              <div className="wizard-footer__btn-row">
+                {step > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleBack}
+                    className="btn-back-footer"
+                    aria-label="Previous step"
+                    title="Go back"
+                  >
+                    <i className="ti ti-chevron-left"></i>
+                  </button>
+                )}
 
-              <span style={{ marginLeft: 'auto', fontSize: 12, color: '#8a97af' }}>
-                {step === 1 ? (selectedService ? `${selectedService.duration}-minute service selected` : 'Select a service from PMS') :
-                 step === 2 ? (selectedSlot ? `${dateLabel} at ${selectedSlot}` : 'Doctor, date and time required') :
-                 step === 3 ? 'Fields marked * are required' :
-                 'Creates appointment in PMS Appointments__s'}
-              </span>
+                <span className="wizard-footer__hint desktop-only">
+                  {step === 1 ? (selectedService ? `${selectedService.duration}-minute service selected` : 'Select a service') :
+                   step === 2 ? (selectedSlot ? `${dateLabel} at ${selectedSlot}` : 'Doctor, date and time required') :
+                   step === 3 ? 'Fields marked * are required' :
+                   'Creates appointment in PMS'}
+                </span>
 
-              <button
-                type="button"
-                disabled={submitting || (step === 1 && services.length === 0)}
-                onClick={handleNext}
-                style={{
-                  height: 34,
-                  padding: '0 18px',
-                  border: 'none',
-                  borderRadius: 8,
-                  background: '#0687ba',
-                  color: '#ffffff',
-                  fontSize: 13,
-                  fontWeight: 500,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  cursor: submitting ? 'wait' : 'pointer',
-                  opacity: submitting ? 0.8 : 1
-                }}
-              >
-                {submitting ? 'Booking in PMS...' : step === 4 ? 'Book appointment' : 'Continue'}
-                <i className={submitting ? 'ti ti-loader' : step === 4 ? 'ti ti-check' : 'ti ti-chevron-right'} style={{ fontSize: 15 }}></i>
-              </button>
+                <button
+                  type="button"
+                  disabled={submitting || (step === 1 && services.length === 0)}
+                  onClick={handleNext}
+                  className="btn-primary"
+                >
+                  <span>{submitting ? 'Booking in PMS...' : step === 4 ? 'Book appointment' : 'Continue'}</span>
+                  <i className={submitting ? 'ti ti-loader' : step === 4 ? 'ti ti-check' : 'ti ti-chevron-right'}></i>
+                </button>
+              </div>
+
+              <div className="mobile-home-indicator"></div>
             </div>
           )}
 
@@ -1122,14 +1506,27 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer style={{ borderTop: '1px solid #e3e8ef', background: '#ffffff' }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto', padding: '14px 20px', display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 11.5, color: '#8a97af' }}>
-          <span>Sugah Healthcorp · Chengalpet, Tamil Nadu 603202</span>
-          <span style={{ marginLeft: 'auto' }}>
+      <footer className="app-footer">
+        <div className="app-footer__inner">
+          {hospitalInfo?.name && (
+            <span>
+              {hospitalInfo.name}
+              {hospitalInfo.address ? ` · ${hospitalInfo.address}` : ''}
+            </span>
+          )}
+          <span className="app-footer__right">
             Connected to Zoho PMS CRM
           </span>
         </div>
       </footer>
+
+      {/* Patient Full Record Detail Modal */}
+      {detailPatient && (
+        <PatientDetailModal
+          patient={detailPatient}
+          onClose={() => setDetailPatient(null)}
+        />
+      )}
     </div>
   )
 }

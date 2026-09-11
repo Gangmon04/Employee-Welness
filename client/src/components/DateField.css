@@ -1,0 +1,292 @@
+/* DateField styles — exact My Desk Controls implementation */
+
+/* ---------- shared control shell ---------- */
+.ctl-shell {
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--input-border, #d6e4ed);
+  border-radius: 6px;
+  background: var(--input-bg, #f4f9fc);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  font-family: var(--font-base, "Zoho_Puvi", sans-serif);
+  font-size: 13.5px;
+  color: var(--font-color, #2f4268);
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.ctl-shell:hover:not(.ctl-shell--disabled):not(.ctl-shell--locked) {
+  border-color: #a8c6dc;
+  background: #f8fbfe;
+}
+.ctl-shell:focus-visible,
+.ctl-shell:has(input:focus-visible) {
+  outline: none;
+}
+.ctl-shell--error {
+  border-color: #e24b4a;
+}
+.ctl-shell--disabled {
+  background: #f1f4f8;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.ctl-shell--locked {
+  background: #f1f4f8;
+  color: #54658a;
+  cursor: default;
+}
+.ctl-shell-icon {
+  font-size: 16px;
+  color: #8a97af;
+  flex: none;
+}
+.ctl-shell-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-family: var(--font-medium, "Zoho_Puvi_Medium", sans-serif);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ctl-shell-value--placeholder {
+  color: #8a97af;
+  font-family: var(--font-regular, "Zoho_Puvi_Regular", sans-serif);
+}
+.ctl-caret {
+  font-size: 16px;
+  color: #8a97af;
+  flex: none;
+}
+
+/* ---------- popup (dropdown / date panels) ---------- */
+.ctl-pop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20300;
+  background: #fff;
+  border: 1px solid #d6e4ed;
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(47, 66, 104, 0.18);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- date picker ---------- */
+.ctl-dp-pop {
+  width: 292px;
+  max-width: calc(100vw - 16px);
+  right: auto;
+  padding: 10px;
+  overflow: visible;
+  gap: 9px;
+  box-sizing: border-box;
+  font-family: var(--font-base, "Zoho_Puvi", sans-serif);
+}
+.ctl-dp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ctl-dp-nav {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 1px solid #d6e4ed;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2f4268;
+  padding: 0;
+  transition: background 0.12s ease;
+}
+.ctl-dp-nav:hover {
+  background: #f4f9fc;
+}
+.ctl-dp-nav:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.ctl-dp-nav i {
+  font-size: 14px;
+}
+.ctl-dp-title {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  border: 1px solid #d6e4ed;
+  border-radius: 6px;
+  background: #f4f9fc;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-family: var(--font-semibold, "Zoho_Puvi_Semibold", sans-serif);
+  color: #2f4268;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.ctl-dp-title:hover {
+  background: #e6f3f9;
+}
+.ctl-dp-title--zoomed {
+  background: #e6f3f9;
+  border-color: #b5d4f4;
+}
+.ctl-dp-title i {
+  font-size: 13px;
+  color: #8a97af;
+}
+.ctl-dp-daygrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.ctl-dp-dow {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-family: var(--font-semibold, "Zoho_Puvi_Semibold", sans-serif);
+  color: #a6b2c6;
+  text-transform: uppercase;
+}
+.ctl-dp-day {
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #2f4268;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0;
+  transition: background 0.12s ease;
+}
+.ctl-dp-day:hover:not(.ctl-dp-day--selected):not(.ctl-dp-day--blank) {
+  background: #f4f9fc;
+}
+.ctl-dp-day--blank {
+  color: #d3dae4;
+  cursor: default;
+  pointer-events: none;
+}
+.ctl-dp-day--disabled {
+  color: #d3dae4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.ctl-dp-day--disabled:hover {
+  background: transparent;
+}
+.ctl-dp-day--today {
+  background: #e6f3f9;
+  font-family: var(--font-semibold, "Zoho_Puvi_Semibold", sans-serif);
+  color: #0687ba;
+}
+.ctl-dp-day--selected {
+  background: #0687ba !important;
+  color: #fff !important;
+  font-family: var(--font-semibold, "Zoho_Puvi_Semibold", sans-serif);
+}
+.ctl-dp-day-dot {
+  position: absolute;
+  bottom: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #0687ba;
+}
+.ctl-dp-grid3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.ctl-dp-cell {
+  height: 40px;
+  border: 1px solid #d6e4ed;
+  border-radius: 7px;
+  background: #fff;
+  color: #2f4268;
+  font: inherit;
+  font-size: 12.5px;
+  font-family: var(--font-medium, "Zoho_Puvi_Medium", sans-serif);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease;
+}
+.ctl-dp-cell:hover {
+  background: #e6f3f9;
+}
+.ctl-dp-cell--disabled {
+  color: #d3dae4;
+  border-color: #edf1f5;
+  background: #fafbfc;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.ctl-dp-cell--disabled:hover {
+  background: #fafbfc;
+}
+.ctl-dp-cell--selected {
+  background: #0687ba !important;
+  border-color: #0687ba !important;
+  color: #fff !important;
+  font-family: var(--font-semibold, "Zoho_Puvi_Semibold", sans-serif);
+}
+.ctl-dp-cell--selected:hover {
+  background: #0687ba;
+}
+.ctl-dp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #edf1f5;
+  padding-top: 8px;
+}
+.ctl-dp-today-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  font-family: var(--font-medium, "Zoho_Puvi_Medium", sans-serif);
+  color: #0687ba;
+  cursor: pointer;
+}
+.ctl-dp-today-link:hover {
+  text-decoration: underline;
+}
+.ctl-dp-today-link:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.ctl-dp-foot-hint {
+  font-size: 11px;
+  color: #a6b2c6;
+}

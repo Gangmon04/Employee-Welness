@@ -1,21 +1,173 @@
+@font-face {
+    font-family: "Zoho_Puvi_Regular";
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+    src: url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Regular.eot");
+    src: url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Regular.eot?#iefix") format("embedded-opentype"),
+        url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Regular.woff2") format("woff2"),
+        url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Regular.otf") format("opentype");
+}
+
+@font-face {
+    font-family: "Zoho_Puvi_Medium";
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+    src: url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Medium.eot");
+    src: url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Medium.eot?#iefix") format("embedded-opentype"),
+        url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Medium.woff2") format("woff2"),
+        url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Medium.otf") format("opentype");
+}
+
+@font-face {
+    font-family: "Zoho_Puvi_Semibold";
+    font-weight: normal;
+    font-style: normal;
+    font-display: block;
+    src: url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Semibold.eot");
+    src: url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Semibold.eot?#iefix") format("embedded-opentype"),
+        url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Semibold.woff2") format("woff2"),
+        url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Semibold.otf") format("opentype");
+}
+
+@font-face {
+    font-family: "Zoho_Puvi_Bold";
+    font-weight: normal;
+    font-style: normal;
+    font-display: block;
+    src: url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Bold.eot");
+    src: url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Bold.eot?#iefix") format("embedded-opentype"),
+        url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Bold.woff2") format("woff2"),
+        url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Bold.otf") format("opentype");
+}
+
+/* Zoho Puvi Unified Family (Modeled strictly after My Desk) */
+@font-face {
+  font-family: "Zoho_Puvi";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Regular.woff2") format("woff2"),
+    url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Regular.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Zoho_Puvi";
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Medium.woff2") format("woff2"),
+    url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Medium.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Zoho_Puvi";
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+  src: url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Semibold.woff2") format("woff2"),
+    url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Semibold.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Zoho_Puvi";
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  src: url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Bold.woff2") format("woff2"),
+    url("https://static.zohocdn.com/zohofonts/zohopuvi/4.0/Zoho_Puvi_Bold.otf") format("opentype");
+}
+
+/* ── My Desk Design Tokens ────────────────────────────────────────── */
+:root {
+  --font-regular: "Zoho_Puvi_Regular", "Zoho_Puvi", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-medium: "Zoho_Puvi_Medium", "Zoho_Puvi", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-semibold: "Zoho_Puvi_Semibold", "Zoho_Puvi", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-bold: "Zoho_Puvi_Bold", "Zoho_Puvi", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-base: "Zoho_Puvi", "Zoho_Puvi_Regular", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --font-size: 13px;
+  --font-color: #2F4268;
+  --app-bg: #E9EBEE;
+  --input-bg: #F4F9FC;
+  --input-border: #D6E4ED;
+  --brand-tint: #E6F3F9;
+  --brand-tab: #2BAFC9;
+
+  --brand: #0687BA;
+  --brand-dark: #056A91;
+  --blue50: #E6F1FB;
+  --blue100: #B5D4F4;
+  --blue200: #85B7EB;
+  --blue400: #378ADD;
+  --blue600: #185FA5;
+  --blue800: #0C447C;
+  --blue900: #042C53;
+
+  --teal50: #E1F5EE;
+  --teal100: #9FE1CB;
+  --teal200: #5DCAA5;
+  --teal400: #1D9E75;
+  --teal600: #0F6E56;
+  --teal800: #085041;
+
+  --amber50: #FAEEDA;
+  --amber100: #FAC775;
+  --amber400: #EF9F27;
+  --amber600: #BA7517;
+  --amber800: #633806;
+
+  --red50: #FCEBEB;
+  --red100: #F7C1C1;
+  --red400: #E24B4A;
+  --red600: #A32D2D;
+
+  --green50: #EAF3DE;
+  --green400: #639922;
+  --green600: #3B6D11;
+
+  --gray50: #F8F7F4;
+  --gray100: #EDECE8;
+  --gray200: #D3D1C7;
+  --gray400: #2F4268;
+  --gray500: #6B7C9E;
+  --gray600: #2F4268;
+  --gray700: #2F4268;
+  --gray800: #2F4268;
+  --gray900: #2F4268;
+
+  --border: #E3E8EF;
+  --subtext: #6B7C9E;
+  --text-muted: #8A97AF;
+  --white: #FFFFFF;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: #e9ebee;
-  color: #2f4268;
+html, body, #root {
   min-height: 100vh;
+  width: 100%;
+  font-family: var(--font-base);
+}
+
+body {
+  font-family: var(--font-base);
+  font-size: var(--font-size);
+  background-color: var(--app-bg);
+  color: var(--font-color);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-#root {
-  min-height: 100vh;
-  width: 100%;
+button, input, select, textarea {
+  font-family: var(--font-base);
+  color: inherit;
+  outline: none;
 }
 
 a {
@@ -23,32 +175,170 @@ a {
   color: inherit;
 }
 
-button {
-  font-family: inherit;
+/* ── Form Controls (My Desk Pattern) ──────────────────────────────── */
+input[type="text"],
+input[type="tel"],
+input[type="email"],
+input[type="number"],
+input[type="date"],
+select,
+textarea {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--font-color);
+  font-family: var(--font-base);
+  font-size: 13.5px;
+  border-radius: 6px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
-input, textarea, select {
-  font-family: inherit;
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--brand);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(6, 135, 186, 0.12);
   outline: none;
 }
 
-input:focus, textarea:focus, select:focus {
-  border-color: #0687ba !important;
+.form-control input:focus,
+.form-control-textarea textarea:focus {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
-/* Scrollbars */
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* ── Typography Utilities ─────────────────────────────────────────── */
+.font-regular {
+  font-family: var(--font-regular) !important;
+}
+
+.font-medium {
+  font-family: var(--font-medium) !important;
+}
+
+.font-semibold {
+  font-family: var(--font-semibold) !important;
+}
+
+.font-bold {
+  font-family: var(--font-bold) !important;
+}
+
+/* ── My Desk Model Header Components ───────────────────────────────── */
+.ph-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--brand-tint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--brand);
+  font-family: var(--font-semibold);
+  font-size: 13.5px;
+  flex-shrink: 0;
+  border: 1px solid rgba(6, 135, 186, 0.15);
+  overflow: hidden;
+}
+
+.ph-avatar--image {
+  background: #ffffff;
+  padding: 2px;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.ph-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+  display: block;
+}
+
+.ph-title {
+  font-size: 14.5px;
+  font-family: var(--font-semibold);
+  color: var(--font-color);
+  line-height: 1.25;
+}
+
+.ph-subtitle {
+  font-size: 11.5px;
+  font-family: var(--font-regular);
+  color: var(--gray500);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── My Desk Chips & Badges ───────────────────────────────────────── */
+.dsk-chip {
+  flex: none;
+  font-size: 11.5px;
+  font-family: var(--font-medium);
+  padding: 3px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.dsk-chip--connected {
+  background: var(--teal50);
+  color: var(--teal600);
+  border: 1px solid var(--teal100);
+}
+
+.dsk-chip--brand {
+  background: var(--brand-tint);
+  color: var(--brand);
+  border: 1px solid var(--blue100);
+}
+
+/* ── My Desk Business Hours Badge ─────────────────────────────────── */
+.avail-rec-badge {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: var(--blue50, #E6F1FB);
+  border: 1px solid var(--blue100, #B5D4F4);
+  color: var(--blue600, #185FA5);
+  font-size: 11.5px;
+  font-family: var(--font-medium);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.avail-rec-badge i {
+  font-size: 13px;
+  color: var(--blue600, #185FA5);
+}
+
+/* ── Scrollbars (My Desk) ─────────────────────────────────────────── */
 ::-webkit-scrollbar {
   height: 6px;
   width: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #f1f4f8;
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #c2d2e2;
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: #0687ba;
+  background: var(--brand);
 }
