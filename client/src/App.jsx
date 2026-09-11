@@ -12,6 +12,7 @@ import {
 import DateField from './components/DateField'
 import MatchCard, { patientMatchRow } from './components/MatchCard'
 import PatientDetailModal from './components/PatientDetailModal'
+import { LoadingScreen, StatusScreen } from './components/StatusScreen'
 import './App.css'
 
 const PRIORITIES = ['Routine', 'Urgent', 'ASAP', 'STAT']
@@ -39,6 +40,45 @@ function parseTimeToMins(timeStr) {
   if (ap === 'PM' && h < 12) h += 12
   if (ap === 'AM' && h === 12) h = 0
   return h * 60 + m
+}
+
+function formatClinicHours(bh) {
+  if (!bh) return null
+  if (typeof bh === 'string') {
+    if (bh.includes('Sunday') && bh.includes('Monday')) {
+      return '24 Hours'
+    }
+    return bh
+  }
+  const type = String(bh.type || '').toLowerCase()
+  if (type.includes('24') || bh.is_24_7 || (bh.same_as_everyday === true && (!bh.daily_timing || bh.daily_timing.length === 0))) {
+    return '24 Hours'
+  }
+  const formatTime = (t) => {
+    if (!t) return ''
+    if (/am|pm/i.test(t)) return t
+    const parts = String(t).split(':')
+    let h = parseInt(parts[0], 10)
+    const m = parts[1] || '00'
+    const ap = h >= 12 ? 'PM' : 'AM'
+    h = h % 12 || 12
+    return `${h}:${m} ${ap}`
+  }
+  if (Array.isArray(bh.daily_timing) && bh.daily_timing.length >= 2) {
+    const s = formatTime(bh.daily_timing[0])
+    const e = formatTime(bh.daily_timing[1])
+    return (s && e) ? `${s} – ${e}` : '24 Hours'
+  }
+  if (Array.isArray(bh.custom_timing) && bh.custom_timing.length > 0) {
+    const first = bh.custom_timing[0]
+    const timing = first.daily_timing || first.timing || first.business_timing || first.shift_timing
+    if (Array.isArray(timing) && timing.length >= 2) {
+      const s = formatTime(timing[0])
+      const e = formatTime(timing[1])
+      return (s && e) ? `${s} – ${e}` : '24 Hours'
+    }
+  }
+  return '24 Hours'
 }
 
 function getWorkingBlocksForDate(dateStr, businessHours, doctorShift) {
@@ -278,8 +318,8 @@ export default function App() {
         }
       })
       .catch((err) => {
-        console.error('Failed to load PMS live data:', err)
-        setFetchError(err.message || 'Unable to fetch live PMS services.')
+        console.error('Failed to load clinic data:', err)
+        setFetchError('Unable to load clinical departments right now. Please check your connection and try again.')
       })
       .finally(() => {
         setLoadingData(false)
@@ -561,7 +601,7 @@ export default function App() {
           m,
           label,
           taken: isBooked || isOnLeave,
-          reason: isBooked ? 'Already scheduled in PMS' : isOnLeave ? 'Doctor unavailable' : ''
+          reason: isBooked ? 'Already booked' : isOnLeave ? 'Doctor unavailable' : ''
         })
       }
     }
@@ -590,7 +630,7 @@ export default function App() {
 
   const validate = () => {
     const errs = {}
-    if (step === 1 && !selectedServiceId) errs.service = 'Select a service from PMS to continue.'
+    if (step === 1 && !selectedServiceId) errs.service = 'Please choose a department to continue.'
     if (step === 2) {
       if (!selectedDoctorId) errs.doctor = 'Select a doctor.'
       if (!selectedDate) errs.slot = 'Select an appointment date.'
@@ -637,13 +677,13 @@ export default function App() {
         }
 
         const result = await createPmsAppointment(payload)
-        const refId = result?.appointmentId || result?.id || 'PMS-SCHEDULED'
+        const refId = result?.appointmentId || result?.id || 'CONFIRMED'
         setBookingRef(refId)
         setStep(5)
         setErrors({})
       } catch (err) {
         console.error('Appointment booking error:', err)
-        setSubmitError(err.message || 'Failed to save appointment in PMS.')
+        setSubmitError('Unable to confirm your appointment right now. Please choose another slot or try again.')
       } finally {
         setSubmitting(false)
       }
@@ -703,7 +743,7 @@ export default function App() {
   }
 
   const stepsRail = [
-    { num: '1', label: 'Service', value: selectedService ? selectedService.name : 'Select from PMS' },
+    { num: '1', label: 'Department', value: selectedService ? selectedService.name : 'Choose department' },
     { num: '2', label: 'Doctor & time', value: selectedDoctor && selectedSlot ? `${selectedDoctor.name} · ${selectedSlot}` : 'Pick doctor & slot' },
     { num: '3', label: 'Patient details', value: first || last ? `${first} ${last}`.trim() : 'Name and mobile' },
     { num: '4', label: 'Confirm', value: bookingRef ? String(bookingRef) : 'Review and book' }
@@ -732,9 +772,22 @@ export default function App() {
     },
     { label: 'Priority', value: priority || 'Routine' },
     { label: 'Chief complaint', value: complaint.trim() || '—' },
-    { label: 'Additional info', value: extra.trim() || '—' },
-    { label: 'Follow-up to', value: 'Not a follow-up' }
+    { label: 'Additional info', value: extra.trim() || '—' }
   ]
+
+  if (loadingData) {
+    return <LoadingScreen message="Loading appointment services…" />
+  }
+
+  if (fetchError && (!services || services.length === 0)) {
+    return (
+      <StatusScreen
+        title="Unable to load appointment services"
+        error={fetchError}
+        onRetry={loadData}
+      />
+    )
+  }
 
   return (
     <div className="app-shell">
@@ -771,9 +824,9 @@ export default function App() {
             <>
               <div className="app-header__divider"></div>
               <div className="app-header__badge-wrap">
-                <span className="avail-rec-badge" title="Organization Business Hours">
+                <span className="avail-rec-badge" title="Clinic Business Hours">
                   <i className="ti ti-clock"></i>
-                  <span>Clinic Hours: {hospitalInfo.businessHours}</span>
+                  <span>Clinic Hours: {formatClinicHours(hospitalInfo.businessHours)}</span>
                 </span>
               </div>
             </>
@@ -882,13 +935,6 @@ export default function App() {
                  step === 3 ? 'Patient Details' :
                  step === 4 ? 'Review and Confirm' : 'Appointment Confirmed'}
               </div>
-              <div className="wizard-card__subtitle">
-                 {step === 1 ? 'Choose the department you need. Each one sets its own consultation length.' :
-                  step === 2 ? (selectedService ? `Doctors associated with ${selectedService.name}. Slots follow clinic hours and doctor shifts.` : 'Slots follow clinic hours and the doctor’s own shift.') :
-                  step === 3 ? 'Enter patient contact information. Matches existing records in PMS Patient module.' :
-                 step === 4 ? 'Check everything below before it is written to the clinic’s records.' :
-                 'Appointment has been recorded in Zoho PMS.'}
-              </div>
             </div>
             <span className="dsk-chip dsk-chip--brand">
               {step === 5 ? 'Confirmed' : `Step ${step} of 4`}
@@ -911,28 +957,35 @@ export default function App() {
                 {loadingData && (
                   <div className="loading-banner">
                     <i className="ti ti-loader"></i>
-                    <span>Fetching live services from PMS...</span>
+                    <span>Loading clinical departments...</span>
                   </div>
                 )}
 
-                {fetchError && (
+                {fetchError && displayServices.length > 0 && (
                   <div className="error-banner">
-                    {fetchError}
+                    Unable to refresh departments right now. Showing available cached services.
                   </div>
                 )}
 
                 {errors.service && <div className="section-error">{errors.service}</div>}
 
                 {!loadingData && displayServices.length === 0 && (
-                  <div className="empty-banner">
-                    <div className="step-rail-label">No live services loaded from PMS Services__s.</div>
+                  <div className="empty-banner" style={{ padding: '36px 24px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '32px', marginBottom: '12px' }}>🩺</div>
+                    <div style={{ fontSize: '16px', fontWeight: 600, color: '#10151c', marginBottom: '6px' }}>
+                      No consultation services available right now
+                    </div>
+                    <p style={{ fontSize: '14px', color: '#667085', maxWidth: '420px', margin: '0 auto 20px', lineHeight: 1.5 }}>
+                      We couldn't retrieve the list of active clinical departments. Please check your internet connection or try refreshing.
+                    </p>
                     <button
                       type="button"
                       onClick={loadData}
                       className="btn-primary"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', margin: '0 auto' }}
                     >
                       <i className="ti ti-refresh"></i>
-                      Retry Loading Live PMS Data
+                      Refresh services
                     </button>
                   </div>
                 )}
@@ -1441,7 +1494,7 @@ export default function App() {
 
                 <div className="confirmation-badge-box">
                   <div className="summary-item__label">
-                    PMS Appointment ID
+                    Appointment Reference
                   </div>
                   <div className="confirmation-ref">{bookingRef}</div>
                 </div>
@@ -1481,10 +1534,10 @@ export default function App() {
                 )}
 
                 <span className="wizard-footer__hint desktop-only">
-                  {step === 1 ? (selectedService ? `${selectedService.duration}-minute service selected` : 'Select a service') :
+                  {step === 1 ? (selectedService ? `${selectedService.duration}-minute consultation selected` : 'Select a department') :
                    step === 2 ? (selectedSlot ? `${dateLabel} at ${selectedSlot}` : 'Doctor, date and time required') :
                    step === 3 ? 'Fields marked * are required' :
-                   'Creates appointment in PMS'}
+                   'Confirms your appointment with the clinic'}
                 </span>
 
                 <button
@@ -1493,7 +1546,7 @@ export default function App() {
                   onClick={handleNext}
                   className="btn-primary"
                 >
-                  <span>{submitting ? 'Booking in PMS...' : step === 4 ? 'Book appointment' : 'Continue'}</span>
+                  <span>{submitting ? 'Confirming...' : step === 4 ? 'Confirm & book' : 'Continue'}</span>
                   <i className={submitting ? 'ti ti-loader' : step === 4 ? 'ti ti-check' : 'ti ti-chevron-right'}></i>
                 </button>
               </div>
@@ -1515,7 +1568,7 @@ export default function App() {
             </span>
           )}
           <span className="app-footer__right">
-            Connected to Zoho PMS CRM
+            Verified Clinic Booking Portal
           </span>
         </div>
       </footer>

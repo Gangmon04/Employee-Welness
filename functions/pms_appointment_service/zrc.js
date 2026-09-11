@@ -6,8 +6,38 @@ const CLIENT_SECRET = process.env.CLIENT_SECRET || 'b7b5cb21b9f01a92e74167c4084e
 const SOID = process.env.SOID || 'Solution.60087134054';
 const SCOPES = process.env.SCOPES || 'Solution.org.ALL,Solution.coql.READ,Solution.settings.ALL,Solution.modules.ALL,Solution.users.ALL';
 
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const TOKEN_CACHE_FILE = path.join(os.tmpdir(), 'pms_oauth_token.json');
+
+function readTokenFromFile() {
+	try {
+		if (fs.existsSync(TOKEN_CACHE_FILE)) {
+			const data = JSON.parse(fs.readFileSync(TOKEN_CACHE_FILE, 'utf8'));
+			if (data && data.token && Date.now() < (data.expires_at || 0)) {
+				return data;
+			}
+		}
+	} catch (e) {}
+	return null;
+}
+
+function writeTokenToFile(token, expiresInSec = 3600) {
+	try {
+		const data = {
+			token,
+			expires_at: Date.now() + ((expiresInSec || 3600) - 300) * 1000
+		};
+		fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify(data), 'utf8');
+	} catch (e) {}
+}
+
 let cachedToken = process.env.PMS_TOKEN || null;
 let tokenExpiryTime = 0;
+let pendingTokenPromise = null;
+let rateLimitedUntil = 0;
 
 async function getAccessToken() {
 	const now = Date.now();
@@ -15,38 +45,69 @@ async function getAccessToken() {
 		return cachedToken;
 	}
 
-	try {
-		const params = new URLSearchParams({
-			grant_type: 'client_credentials',
-			client_id: CLIENT_ID,
-			client_secret: CLIENT_SECRET,
-			scope: SCOPES,
-			soid: SOID
-		});
-
-		const res = await fetch('https://accounts.zoho.in/oauth/v2/token', {
-			method: 'POST',
-			body: params
-		});
-
-		const rawText = await res.text();
-		const data = JSON.parse(rawText);
-
-		if (data.access_token) {
-			cachedToken = data.access_token;
-			tokenExpiryTime = now + ((data.expires_in || 3600) - 300) * 1000;
-			return cachedToken;
-		}
-		console.warn('Zoho accounts token response error:', rawText.slice(0, 200));
-	} catch (err) {
-		console.warn('OAuth refresh error, using cached token if available:', err.message);
-	}
-
-	if (cachedToken) {
+	// 1. Try file cache across processes
+	const fileCache = readTokenFromFile();
+	if (fileCache) {
+		cachedToken = fileCache.token;
+		tokenExpiryTime = fileCache.expires_at;
 		return cachedToken;
 	}
 
-	throw new Error('Unable to authenticate with Zoho Accounts. Please try again later.');
+	// 2. If rate-limited recently and we have an existing token, reuse it
+	if (now < rateLimitedUntil && cachedToken) {
+		return cachedToken;
+	}
+
+	// 3. Deduplicate concurrent token requests
+	if (pendingTokenPromise) {
+		return pendingTokenPromise;
+	}
+
+	pendingTokenPromise = (async () => {
+		try {
+			const params = new URLSearchParams({
+				grant_type: 'client_credentials',
+				client_id: CLIENT_ID,
+				client_secret: CLIENT_SECRET,
+				scope: SCOPES,
+				soid: SOID
+			});
+
+			const res = await fetch('https://accounts.zoho.in/oauth/v2/token', {
+				method: 'POST',
+				body: params
+			});
+
+			const rawText = await res.text();
+			let data = {};
+			try { data = JSON.parse(rawText); } catch (pe) {}
+
+			if (data.access_token) {
+				cachedToken = data.access_token;
+				tokenExpiryTime = Date.now() + ((data.expires_in || 3600) - 300) * 1000;
+				writeTokenToFile(cachedToken, data.expires_in || 3600);
+				return cachedToken;
+			}
+
+			if (rawText.includes('too many requests')) {
+				rateLimitedUntil = Date.now() + 30000; // 30s cooldown
+			}
+
+			console.warn('Zoho accounts token response error:', rawText.slice(0, 200));
+		} catch (err) {
+			console.warn('OAuth refresh error, using cached token if available:', err.message);
+		} finally {
+			pendingTokenPromise = null;
+		}
+
+		if (cachedToken) {
+			return cachedToken;
+		}
+
+		throw new Error('Unable to authenticate with Zoho Accounts. Please try again later.');
+	})();
+
+	return pendingTokenPromise;
 }
 
 /**

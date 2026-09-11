@@ -218,5 +218,5 @@ export async function createPmsAppointment({
     return cData;
   }
 
-  throw new Error(cData?.error || 'Failed to create appointment in PMS.');
+  throw new Error(cData?.error || 'Unable to confirm your appointment at this time. Please try again.');
 }

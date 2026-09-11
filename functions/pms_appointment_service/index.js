@@ -125,7 +125,7 @@ async function resolveAppointmentFor({ patientName, firstName, lastName, mobileN
 			Mobile: indiaMobile,
 			Phone: indiaMobile,
 			...(email ? { Email: email } : {}),
-			Lead_Source: 'Online Appointment Booking'
+			Lead_Source: ''
 		}],
 		trigger: ['workflow']
 	});
@@ -228,8 +228,38 @@ module.exports = async (req, res) => {
 				try {
 					const bhRes = await zrc.get('/crm/v8/settings/business_hours');
 					const bh = bhRes.data?.business_hours || (Array.isArray(bhRes.data?.data) ? bhRes.data.data[0] : null);
-					if (bh?.business_days && Array.isArray(bh.business_days)) {
-						businessHours = bh.business_days.join(', ');
+					if (bh) {
+						const type = String(bh.type || '').toLowerCase();
+						const formatTime = (t) => {
+							if (!t) return '';
+							if (/am|pm/i.test(t)) return t;
+							const parts = String(t).split(':');
+							let h = parseInt(parts[0], 10);
+							const m = parts[1] || '00';
+							const ampm = h >= 12 ? 'PM' : 'AM';
+							h = h % 12 || 12;
+							return `${h}:${m} ${ampm}`;
+						};
+
+						if (type.includes('24') || bh.is_24_7 || (bh.same_as_everyday === true && (!bh.daily_timing || bh.daily_timing.length === 0))) {
+							businessHours = '24 Hours';
+						} else if (Array.isArray(bh.daily_timing) && bh.daily_timing.length >= 2) {
+							const start = formatTime(bh.daily_timing[0]);
+							const end = formatTime(bh.daily_timing[1]);
+							businessHours = (start && end) ? `${start} – ${end}` : '24 Hours';
+						} else if (Array.isArray(bh.custom_timing) && bh.custom_timing.length > 0) {
+							const first = bh.custom_timing[0];
+							const timing = first.daily_timing || first.timing || first.business_timing || first.shift_timing;
+							if (Array.isArray(timing) && timing.length >= 2) {
+								const start = formatTime(timing[0]);
+								const end = formatTime(timing[1]);
+								businessHours = (start && end) ? `${start} – ${end}` : '24 Hours';
+							} else {
+								businessHours = '24 Hours';
+							}
+						} else {
+							businessHours = '24 Hours';
+						}
 					}
 				} catch (bErr) {
 					console.warn('Could not fetch business hours via ZRC:', bErr.message);

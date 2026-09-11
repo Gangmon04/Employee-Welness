@@ -170,7 +170,7 @@ export default function PatientDetailModal({ patient, onClose }) {
             }}
           >
             <i className="ti ti-external-link" />
-            Open in Zoho PMS CRM
+            View Patient Profile
           </button>
 
           <button
