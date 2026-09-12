@@ -1,6 +1,6 @@
 'use strict';
 
-const { zrc, getAccessToken, PMS_BASE_URL, CLIENT_ID, SOID } = require('./zrc');
+const { zrc, PMS_BASE_URL } = require('./zohoClient');
 
 let cachedOrgLogo = null;
 let logoCachedAt = 0;
